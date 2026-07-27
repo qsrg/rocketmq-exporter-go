@@ -1,0 +1,51 @@
+schema: spec-driven
+
+# Project context (shown to AI when creating artifacts)
+context: |
+  Project: Go rewrite of Apache RocketMQ Exporter (Java v0.0.3-SNAPSHOT).
+  Source of truth for behavior: CLAUDE.md (governing spec) + Java source at
+  /Users/wcf/java-project/rocketmq-exporter. Go project root:
+  /Users/wcf/go-project/rmq-exporter (module github.com/wcf/rmq-exporter).
+  Target RocketMQ 4.x (align Java 4.9.8 protocol).
+
+  GOLDEN RULE - metric fidelity: Prometheus metric names, types (counter/gauge),
+  label names AND label order must be byte-identical to the Java version
+  (Grafana dashboard 10477 + example.rules depend on it). HELP text preserved.
+  Never silently add/rename/drop a metric; record any deviation in the change.
+  Metric-name fidelity != config fidelity: collected ports/paths/config format
+  may modernize (flag+env, defaults :5557 /metrics).
+
+  Tech stack: net/http (no framework), prometheus/client_golang v1.23.2,
+  robfig/cron/v3 v3.0.1 + WithSeconds() (?->* on load), log/slog, encoding/json,
+  stdlib only (no DI framework, no panic for control flow). Manual constructor
+  injection. Bounded worker pool (core/max=10, queue=5000, discard-oldest).
+  Apache 2.0 license headers on all source files.
+
+  Phase 1 scope (this change): /metrics endpoint + 6 cron collection tasks +
+  admin client wrapper. OTLP gRPC is Phase 2 (deferred; internal/otlp/ reserved).
+
+  #1 RISK: Go rocketmq-client-go/v2 admin package lacks nearly all read RPCs the
+  Java exporter uses, and its remoting wire layer (internal/remote) is an internal
+  package not importable externally. Resolution (Path A, user-approved): vendor
+  the wire layer + needed internal bits into this module, rewrite import paths,
+  then implement the read RPCs natively. Spike must enumerate every admin method
+  MetricsCollectTask uses before large-scale coding.
+
+  Conventions: table-driven unit tests for pure functions, compare against Java
+  output. "Best effort" collection semantics preserved: a single topic/broker
+  failure only logs and continues; TOPIC_NOT_EXIST / CONSUMER_NOT_ONLINE /
+  SYSTEM_ERROR silent-degrade logic ported verbatim.
+
+# Per-artifact rules (optional)
+rules:
+  proposal:
+    - Keep under 600 words
+    - Always include a "Non-goals" section
+    - Reference the Java source files that are the fidelity source of truth
+  design:
+    - Show the Java->Go mapping for every subsystem touched
+    - Call out the admin-client coverage risk and the vendoring approach
+  tasks:
+    - Break tasks into bite-sized TDD steps (2-5 min each where feasible)
+    - Each task: exact file path + command, no placeholders
+    - Sequence foundation (config/util/models/collector) before vendoring and RPCs

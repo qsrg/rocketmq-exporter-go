@@ -1,0 +1,1 @@
+{"brokerAddrTable":{"broker-b":{"brokerAddrs":{0:"127.0.0.1:20911"},"brokerName":"broker-b","cluster":"DefaultCluster"},"broker-a":{"brokerAddrs":{0:"127.0.0.1:10911"},"brokerName":"broker-a","cluster":"DefaultCluster"}},"clusterAddrTable":{"DefaultCluster":["broker-b","broker-a"]}}

@@ -1,0 +1,33 @@
+# Go 构建产物
+/rmq-exporter
+/cmd/rmq-exporter/rmq-exporter
+/bin/
+/dist/
+*.exe
+*.test
+*.out
+*.prof
+*.cover
+coverage.txt
+coverage.html
+
+# Go 依赖
+/vendor/
+
+# IDE - JetBrains（个人配置，含 workspace.xml 等本地状态）
+.idea/
+
+# IDE - VS Code
+.vscode/
+
+# Claude Code 本地设置（权限等，因人而异）
+.claude/settings.local.json
+
+# 操作系统
+.DS_Store
+Thumbs.db
+
+# 日志 / 临时文件
+*.log
+*.swp
+*~
