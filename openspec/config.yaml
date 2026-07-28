@@ -47,5 +47,5 @@ rules:
     - Call out the admin-client coverage risk and the vendoring approach
   tasks:
     - Break tasks into bite-sized TDD steps (2-5 min each where feasible)
-    - Each task: exact file path + command, no placeholders
+    - "Each task: exact file path + command, no placeholders"
     - Sequence foundation (config/util/models/collector) before vendoring and RPCs

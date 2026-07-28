@@ -1,4 +1,11 @@
 
+# configuration Specification
+
+## Purpose
+CLI flag + 环境变量配置替代 Spring `application.yml`，保留 Java 语义调参项，内置现代化默认值，启动时校验 cron 表达式并快速失败。
+
+## Requirements
+
 ### Requirement: flag 与环境变量配置
 系统 SHALL 从 CLI flag 加载配置，以环境变量为回退，替代 Spring `application.yml`。系统 SHALL 保留 Java 的语义调参项（namesrv、enable-collect、ACL、缓存 TTL、六个 cron 表达式、worker pool 规模、监听地址、telemetry 路径），但可自由重命名 key。
 
