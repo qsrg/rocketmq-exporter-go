@@ -1,4 +1,11 @@
 
+# rocketmq-admin-client Specification
+
+## Purpose
+基于 vendor `rocketmq-client-go/v2` remoting wire layer 实现 admin 读 RPC，覆盖采集所需的全部读方法；保留 ResponseCode 错误、ACL 签名（HmacSHA1）、admin 客户端生命周期；仅移植读 RPC，不移植写/配置类方法。
+
+## Requirements
+
 ### Requirement: 基于 vendor 的 remoting wire layer 实现读 RPC
 系统 SHALL 通过 vendor `rocketmq-client-go/v2` 的 `internal/remote` wire layer（重写 import path）至本模块，在 RocketMQ 4.x remoting 协议上实现 `MetricsCollectTask` 与 `ClientMetricTaskRunnable` 依赖的 admin 读 RPC。已实现 RPC SHALL 覆盖：`examineBrokerClusterInfo`、`fetchAllTopicList`、`examineTopicStats`、`examineTopicRouteInfo`、`queryTopicConsumeByWho`、`examineConsumerConnectionInfo`、`examineConsumeStats`、`viewBrokerStatsData`、`fetchBrokerRuntimeStats`、`getAllProducerInfo`、`getConsumerRunningInfo`、`queryMsgByOffset`（PULL_MESSAGE）。
 

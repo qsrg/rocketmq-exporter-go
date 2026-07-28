@@ -70,6 +70,10 @@ type MetricsCollector struct {
 	// in sync without per-field boilerplate (and to keep label order consistent).
 	runtimeMetrics    []runtimeMetric
 	distributeMetrics []distributeMetric
+
+	// health is the non-TTL store for the cluster-health-check capability
+	// (Go-only addition; fed by internal/health.Prober).
+	health *healthStore
 }
 
 // runtimeMetric is one broker-runtime gauge backed by its own cache, so a null
@@ -129,6 +133,7 @@ func NewWithClock(ttl time.Duration, clk clock) *MetricsCollector {
 	c.distributeMetrics = buildDistributeMetrics(func() *ttlCache[brokerRuntimeKey, runtimeEntry] {
 		return newCache[brokerRuntimeKey, runtimeEntry](ttl, clk)
 	})
+	c.health = newHealthStore()
 	return c
 }
 
@@ -405,6 +410,22 @@ func (c *MetricsCollector) Gather() ([]*dto.MetricFamily, error) {
 	for _, rm := range c.runtimeMetrics {
 		families = append(families, gaugeFamily(rm.name, rm.help, brokerRuntimeLabels, runtimeSamples(rm.cache)))
 	}
+
+	// --- cluster-health-check (Go-only addition; appended AFTER all Java-parity
+	// families so the golden / Java-diff surface is untouched). Counters use
+	// counterFamily so an empty family still emits `# TYPE ... counter`. ---
+	families = append(families,
+		counterFamily("rocketmq_health_check_produce_total",
+			"RocketMQ health check produce result count", healthProduceLabels, c.health.produceSamples()),
+		counterFamily("rocketmq_health_check_consume_total",
+			"RocketMQ health check consumed message count", healthConsumeLabels, c.health.consumeSamples()),
+		gaugeFamily("rocketmq_health_check_status",
+			"RocketMQ health check status (1=healthy, 0=unhealthy)", healthCheckLabels, c.health.statusSamples()),
+		gaugeFamily("rocketmq_health_check_latency_seconds",
+			"RocketMQ health check latency in seconds", healthCheckLabels, c.health.latencySamples()),
+		gaugeFamily("rocketmq_health_check_last_success_timestamp_seconds",
+			"Unix timestamp of last successful health check", healthCheckLabels, c.health.lastSuccessSamples()),
+	)
 
 	return families, nil
 }

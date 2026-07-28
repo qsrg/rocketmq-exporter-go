@@ -1,4 +1,11 @@
 
+# collection-tasks Specification
+
+## Purpose
+六个 cron 采集任务镜像 Java `MetricsCollectTask` 的 `@Scheduled` 方法，按调度采集 RocketMQ 集群指标；按 topic/broker 失败隔离的尽力而为语义，通过有界"丢弃最旧"worker pool 采集 client 运行时指标，支持优雅退出。
+
+## Requirements
+
 ### Requirement: 六个 cron 采集任务
 系统 SHALL 注册六个计划采集任务，镜像 `MetricsCollectTask.java` 的 `@Scheduled` 方法：`collectTopicOffset`、`collectProducer`、`collectConsumerOffset`、`collectBrokerStatsTopic`、`collectBrokerStats`（含 `collectBrokerGroupStats`，共享 `collectBrokerStats` cron）、`collectBrokerRuntimeStats`。调度器 SHALL 使用 `robfig/cron/v3` + `WithSeconds()`，并在加载时将 6 字段表达式中的 `?` 转 `*`。每个任务的默认 cron SHALL 为 Java 的 `15 0/1 * * * ?` → `15 0/1 * * * *` 语义（每分钟第 15 秒）。
 

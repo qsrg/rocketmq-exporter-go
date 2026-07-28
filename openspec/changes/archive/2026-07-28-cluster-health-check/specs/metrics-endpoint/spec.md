@@ -1,9 +1,5 @@
+## MODIFIED Requirements
 
-# metrics-endpoint Specification
-
-## Purpose
-暴露 Prometheus `/metrics` 端点输出 Java 对齐指标；启用健康检查时额外暴露 `/healthz` 端点。
-## Requirements
 ### Requirement: 单个 Prometheus 指标端点
 系统 SHALL 暴露 HTTP `GET` 端点位于配置的 telemetry 路径（默认 `/metrics`），输出 Prometheus text exposition 格式。当 `health-check-enabled=true` 时，系统 SHALL 额外暴露健康检查端点（默认 `/healthz`，详见 cluster-health-check 能力）；`health-check-enabled=false` 时 SHALL NOT 提供除 telemetry 路径外的 HTTP 路由。
 
@@ -38,26 +34,7 @@
 - **WHEN** `/metrics` 输出含健康检查 family
 - **THEN** Java 保真指标的名称/类型/标签/顺序不变，健康检查 family 以 `rocketmq_health_check_` 前缀隔离。
 
-### Requirement: TTL 缓存 gauge 存储
-系统 SHALL 把采集到的值存于内存 cache，自最后一次写入后 `cache-ttl` 秒淘汰（替代 Guava `expireAfterWrite`），使 `/metrics` scrape 反映最近一次成功采集而非每次 scrape 重新查询集群。
-
-#### Scenario: 值在 TTL 后过期
-- **WHEN** 某指标值在 T 时写入且无更新
-- **THEN** 在 T + cache-ttl + ε 时该值不再出现于 `/metrics`。
-
-### Requirement: OTLP gRPC 延后
-系统 SHALL NOT 在一期实现 OTLP gRPC 服务端。`internal/otlp/` 目录 SHALL 存在但为空/预留。
-
-#### Scenario: 无 grpc 监听
-- **WHEN** exporter 启动
-- **THEN** 不开放任何 gRPC 端口（含 5559）。
-
-### Requirement: Apache 2.0 源文件头
-每个 Go 源文件 SHALL 带 Apache License 2.0 头注释。
-
-#### Scenario: 头注释存在
-- **WHEN** 在 `cmd/` 或 `internal/` 下新增 `.go` 文件
-- **THEN** 其首行含 ASF license 头。
+## ADDED Requirements
 
 ### Requirement: 健康检查 family 合并与空 family 类型编码
 `/metrics` 输出 SHALL 在 Java 保真 family 之后追加 cluster-health-check 能力产生的健康检查 family。对于无样本的空 family，系统 SHALL 按 `MetricFamily.GetType()` 输出 `# TYPE` 行（如 counter family 输出 `# TYPE ... counter`），SHALL NOT 硬编码为 `gauge`。
@@ -69,4 +46,3 @@
 #### Scenario: 空 counter family 的 TYPE 行
 - **WHEN** 某 counter family（如 `rocketmq_health_check_produce_total`）尚无样本
 - **THEN** 其 `# TYPE` 行为 `# TYPE rocketmq_health_check_produce_total counter`，不为 `gauge`。
-
