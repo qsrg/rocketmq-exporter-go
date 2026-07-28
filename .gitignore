@@ -20,6 +20,9 @@ coverage.html
 # IDE - VS Code
 .vscode/
 
+# IDE - Trae
+.trae/
+
 # Claude Code 本地设置（权限等，因人而异）
 .claude/settings.local.json
 

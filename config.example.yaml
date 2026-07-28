@@ -1,0 +1,77 @@
+# Licensed to the Apache Software Foundation (ASF) under one or more
+# contributor license agreements.  See the NOTICE file distributed with this
+# work for additional information regarding copyright ownership.  The ASF
+# licenses this file to You under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
+# License for the specific language governing permissions and limitations
+# under the License.
+
+# rmq-exporter configuration file (YAML).
+# All fields are optional; absent fields fall back to defaults.
+# Priority: CLI flag > environment variable > this file > built-in default.
+#
+# Environment variables use the RMQ_ prefix, e.g. RMQ_NAMESRV_ADDR.
+# The config file path itself is set via --config flag or RMQ_CONFIG env var.
+
+# RocketMQ nameserver address (comma-separated for cluster)
+# env: RMQ_NAMESRV_ADDR  flag: --namesrv
+namesrv: "127.0.0.1:9876"
+
+# HTTP listen address
+# env: RMQ_LISTEN  flag: --listen
+listen: ":5557"
+
+# Prometheus metrics path
+# env: RMQ_TELEMETRY_PATH  flag: --telemetry-path
+telemetry_path: "/metrics"
+
+# Enable scheduled collection tasks
+# env: RMQ_ENABLE_COLLECT  flag: --enable-collect
+enable_collect: true
+
+# Attach ACL signature to remoting commands
+# env: RMQ_ENABLE_ACL  flag: --enable-acl
+enable_acl: false
+
+# ACL credentials (requires enable_acl: true)
+# env: RMQ_ACCESS_KEY / RMQ_SECRET_KEY  flags: --access-key / --secret-key
+access_key: ""
+secret_key: ""
+
+# TTL of the in-memory metric store (Go duration format)
+# env: RMQ_CACHE_TTL  flag: --cache-ttl
+cache_ttl: "60s"
+
+# Bounded worker pool sizing
+pool:
+  core: 10
+  max: 10
+  queue: 5000
+
+# Cron expressions for the six collection tasks (6-field, seconds precision)
+# '?' is allowed and will be translated to '*' at load time.
+# env: RMQ_CRON_*  flags: --cron.*
+cron:
+  collect_topic_offset: "15 0/1 * * * ?"
+  collect_producer: "15 0/1 * * * ?"
+  collect_consumer_offset: "15 0/1 * * * ?"
+  collect_broker_stats_topic: "15 0/1 * * * ?"
+  collect_broker_stats: "15 0/1 * * * ?"
+  collect_broker_runtime_stats: "15 0/1 * * * ?"
+
+# Active end-to-end cluster health probe (Go-only; no Java equivalent)
+health_check:
+  enabled: true
+  topic_prefix: "HealthCheckTopic-"
+  group_prefix: "HealthCheckGroup-"
+  rate: 2.0
+  recency: "5s"
+  cluster_refresh: "5m"
+  path: "/healthz"

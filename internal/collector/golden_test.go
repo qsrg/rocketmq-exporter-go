@@ -139,6 +139,27 @@ var runtimeGolden = []expectedFamily{
 
 var runtimeLabelNames = []string{"cluster", "brokerIP", "brokerHost", "des", "boottime", "broker_version"}
 
+// healthGoldenFamilies are the Go-only cluster-health-check families appended
+// AFTER the Java-parity families. Two are counters (not gauges) and all five may
+// be empty when no probe has run yet (the golden populate has no prober).
+// Recorded per the golden rule: additions are allowed but must be explicit
+// (design D4 / openspec/changes/cluster-health-check).
+type healthExpectedFamily struct {
+	name       string
+	help       string
+	labels     []string
+	typ        dto.MetricType
+	allowEmpty bool
+}
+
+var healthGoldenFamilies = []healthExpectedFamily{
+	{"rocketmq_health_check_produce_total", "RocketMQ health check produce result count", []string{"cluster", "result"}, dto.MetricType_COUNTER, true},
+	{"rocketmq_health_check_consume_total", "RocketMQ health check consumed message count", []string{"cluster"}, dto.MetricType_COUNTER, true},
+	{"rocketmq_health_check_status", "RocketMQ health check status (1=healthy, 0=unhealthy)", []string{"cluster", "check"}, dto.MetricType_GAUGE, true},
+	{"rocketmq_health_check_latency_seconds", "RocketMQ health check latency in seconds", []string{"cluster", "check"}, dto.MetricType_GAUGE, true},
+	{"rocketmq_health_check_last_success_timestamp_seconds", "Unix timestamp of last successful health check", []string{"cluster", "check"}, dto.MetricType_GAUGE, true},
+}
+
 func TestGoldenMetricFamilies(t *testing.T) {
 	c := New(time.Minute) // TTL irrelevant for the golden check; non-zero so entries are live
 	populateAll(c)
@@ -153,8 +174,9 @@ func TestGoldenMetricFamilies(t *testing.T) {
 	}
 
 	want := append(append([]expectedFamily{}, goldenFamilies...), runtimeGolden...)
-	if len(want) != len(got) {
-		t.Errorf("family count: got %d, want %d", len(got), len(want))
+	if len(want)+len(healthGoldenFamilies) != len(got) {
+		t.Errorf("family count: got %d, want %d (%d Java-parity + %d health)",
+			len(got), len(want)+len(healthGoldenFamilies), len(want), len(healthGoldenFamilies))
 	}
 
 	for _, w := range want {
@@ -170,7 +192,7 @@ func TestGoldenMetricFamilies(t *testing.T) {
 			t.Errorf("family %q type = %v, want GAUGE", w.name, f.GetType())
 		}
 		if len(f.Metric) == 0 {
-			// group_consume_total_offset is the only expected empty family.
+			// group_consume_total_offset is the only expected empty Java family.
 			if w.name != "rocketmq_group_consume_total_offset" {
 				t.Errorf("family %q has no samples after populate", w.name)
 			}
@@ -182,18 +204,81 @@ func TestGoldenMetricFamilies(t *testing.T) {
 		}
 	}
 
-	// No spurious families beyond the golden set.
-	for name := range got {
-		found := false
+	// Health families: type must match (counter vs gauge); they may be empty
+	// (no prober in the golden populate). When non-empty, label order is checked.
+	for _, w := range healthGoldenFamilies {
+		f, ok := got[w.name]
+		if !ok {
+			t.Errorf("missing health family %q", w.name)
+			continue
+		}
+		if f.GetHelp() != w.help {
+			t.Errorf("health family %q HELP = %q, want %q", w.name, f.GetHelp(), w.help)
+		}
+		if f.GetType() != w.typ {
+			t.Errorf("health family %q type = %v, want %v", w.name, f.GetType(), w.typ)
+		}
+		if len(f.Metric) == 0 {
+			if !w.allowEmpty {
+				t.Errorf("health family %q has no samples", w.name)
+			}
+			continue
+		}
+		gotLabels := labelNames(f.Metric[0])
+		if !equalSlices(gotLabels, w.labels) {
+			t.Errorf("health family %q label order = %v, want %v", w.name, gotLabels, w.labels)
+		}
+	}
+
+	// No spurious families beyond the golden + health sets.
+	allowed := func(name string) bool {
 		for _, w := range want {
 			if w.name == name {
-				found = true
+				return true
+			}
+		}
+		for _, w := range healthGoldenFamilies {
+			if w.name == name {
+				return true
+			}
+		}
+		return false
+	}
+	for name := range got {
+		if !allowed(name) {
+			t.Errorf("unexpected family %q not in golden set", name)
+		}
+	}
+
+	// Health families MUST appear after every Java-parity family (design D6).
+	firstHealth := -1
+	lastParity := -1
+	for i, f := range families {
+		name := f.GetName()
+		parity := false
+		for _, w := range want {
+			if w.name == name {
+				parity = true
 				break
 			}
 		}
-		if !found {
-			t.Errorf("unexpected family %q not in golden set", name)
+		if parity {
+			lastParity = i
+			continue
 		}
+		isHealth := false
+		for _, w := range healthGoldenFamilies {
+			if w.name == name {
+				isHealth = true
+				break
+			}
+		}
+		if isHealth && firstHealth == -1 {
+			firstHealth = i
+		}
+	}
+	if firstHealth != -1 && lastParity != -1 && firstHealth < lastParity {
+		t.Errorf("health families (first at %d) must follow Java-parity families (last at %d)", firstHealth, lastParity)
 	}
 }
 

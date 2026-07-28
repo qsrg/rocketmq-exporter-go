@@ -24,18 +24,23 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/prometheus/common/expfmt"
 	"github.com/robfig/cron/v3"
 
+	dto "github.com/prometheus/client_model/go"
+
 	"github.com/wcf/rmq-exporter/internal/collector"
 	"github.com/wcf/rmq-exporter/internal/config"
+	"github.com/wcf/rmq-exporter/internal/health"
 	"github.com/wcf/rmq-exporter/internal/service"
 	"github.com/wcf/rmq-exporter/internal/task"
 )
@@ -48,7 +53,22 @@ func main() {
 }
 
 func run() error {
-	cfg := config.RegisterFlags(flag.CommandLine, "RMQ_")
+	// Register --config flag for help text; actual value obtained via
+	// FindConfigPath() before flag.Parse() so YAML values can influence
+	// the flag defaults.
+	var configPathVar string
+	flag.StringVar(&configPathVar, "config", os.Getenv("RMQ_CONFIG"), "path to YAML config file (env: RMQ_CONFIG)")
+
+	// Priority chain: flag > env > config file > default.
+	configPath := config.FindConfigPath()
+	base := config.Default()
+	if configPath != "" {
+		if err := config.OverlayFile(&base, configPath); err != nil {
+			return fmt.Errorf("config file %s: %w", configPath, err)
+		}
+		slog.Info("loaded config file", "path", configPath)
+	}
+	cfg := config.RegisterFlags(flag.CommandLine, "RMQ_", &base)
 	flag.Parse()
 	if err := cfg.ValidateAll(); err != nil {
 		return err
@@ -103,22 +123,28 @@ func run() error {
 			return
 		}
 		w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
-		// expfmt's text encoder REJECTS families with zero metrics (returns an
-		// error), but the Java exporter emits empty gauge families as bare
-		// # HELP / # TYPE lines. Emit those manually and Encode only non-empty
-		// families, so the output matches the Java /metrics surface.
-		enc := expfmt.NewEncoder(w, expfmt.FmtText)
-		for _, mf := range families {
-			if len(mf.Metric) == 0 {
-				fmt.Fprintf(w, "# HELP %s %s\n# TYPE %s gauge\n", mf.GetName(), mf.GetHelp(), mf.GetName())
-				continue
-			}
-			if err := enc.Encode(mf); err != nil {
-				slog.Error("encode metric family", "name", mf.GetName(), "err", err)
-				return
-			}
-		}
+		encodeMetricFamilies(w, families)
 	})
+
+	// Active end-to-end cluster health probe (Go-only; cluster-health-check
+	// capability). When disabled, /healthz is simply not registered (404).
+	if cfg.HealthCheck.Enabled {
+		hca, err := health.NewAdapter(cfg)
+		if err != nil {
+			return fmt.Errorf("health adapter: %w", err)
+		}
+		prober := health.NewProber(cfg.HealthCheck, health.NewClusterLister(admin), coll,
+			hca.Producer(), hca.ConsumerFactory(), nil)
+		if err := prober.Start(ctx); err != nil {
+			return fmt.Errorf("health prober start: %w", err)
+		}
+		defer prober.Shutdown(context.Background())
+		mux.Handle(cfg.HealthCheck.Path, health.HealthzHandler(coll))
+		slog.Info("cluster health check enabled",
+			"path", cfg.HealthCheck.Path, "rate", cfg.HealthCheck.Rate,
+			"recency", cfg.HealthCheck.Recency, "clusterRefresh", cfg.HealthCheck.ClusterRefresh)
+	}
+
 	srv := &http.Server{Addr: cfg.Listen, Handler: mux}
 	go func() {
 		slog.Info("serving metrics", "addr", cfg.Listen, "path", cfg.TelemetryPath)
@@ -165,4 +191,25 @@ type cronLogger struct{}
 
 func (c *cronLogger) Printf(format string, args ...any) {
 	slog.Info(format, "args", args)
+}
+
+// encodeMetricFamilies writes families in Prometheus text exposition format. The
+// expfmt text encoder REJECTS families with zero metrics (returns an error), but
+// the Java exporter emits empty families as bare # HELP / # TYPE lines; those are
+// emitted manually here. The # TYPE line uses MetricFamily.GetType() (not a
+// hardcoded "gauge") so an empty counter family is correctly labeled "counter" -
+// required now that the cluster-health-check capability adds counter families.
+func encodeMetricFamilies(w io.Writer, families []*dto.MetricFamily) {
+	enc := expfmt.NewEncoder(w, expfmt.FmtText)
+	for _, mf := range families {
+		if len(mf.Metric) == 0 {
+			typ := strings.ToLower(mf.GetType().String())
+			fmt.Fprintf(w, "# HELP %s %s\n# TYPE %s %s\n", mf.GetName(), mf.GetHelp(), mf.GetName(), typ)
+			continue
+		}
+		if err := enc.Encode(mf); err != nil {
+			slog.Error("encode metric family", "name", mf.GetName(), "err", err)
+			return
+		}
+	}
 }
