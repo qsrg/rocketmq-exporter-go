@@ -76,7 +76,7 @@ func TestLiveProbeProducerConsumer(t *testing.T) {
 
 	for i := 0; i < 20; i++ {
 		msg := primitive.NewMessage(topic, []byte(fmt.Sprintf("probe-%d", i)))
-		if _, err := p.SendSync(t.Context(), msg); err != nil {
+		if _, err := p.SendSync(context.Background(), msg); err != nil {
 			t.Logf("send %d: %v (continuing)", i, err)
 		}
 	}
@@ -122,7 +122,7 @@ func TestLiveProbeProducerConsumer(t *testing.T) {
 
 	// --- now exercise the exporter's admin RPCs against the freshly-seeded data ---
 	a := liveAdminClient(t)
-	defer a.Shutdown(t.Context())
+	defer a.Shutdown(context.Background())
 
 	ci, err := a.ExamineBrokerClusterInfo()
 	if err != nil {

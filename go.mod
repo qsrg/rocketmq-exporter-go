@@ -1,6 +1,6 @@
 module github.com/qsrg/rocketmq-exporter-go
 
-go 1.26.3
+go 1.23.0
 
 require (
 	github.com/apache/rocketmq-client-go/v2 v2.1.2

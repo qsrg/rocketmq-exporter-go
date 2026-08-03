@@ -16,6 +16,7 @@
 package service
 
 import (
+	"context"
 	"os"
 	"testing"
 	"time"
@@ -57,7 +58,7 @@ func TestLiveExamineBrokerClusterInfo(t *testing.T) {
 		t.Skip("set RMQ_LIVE_TESTS=1 to run live broker tests")
 	}
 	a := liveAdminClient(t)
-	defer a.Shutdown(t.Context())
+	defer a.Shutdown(context.Background())
 
 	// Capture the raw body for an offline fixture.
 	cmd := rmqremote.NewRemotingCommand(rmqremote.RequestGetBrokerClusterInfo, nil, nil)
@@ -91,7 +92,7 @@ func TestLiveFetchAllTopicList(t *testing.T) {
 		t.Skip("set RMQ_LIVE_TESTS=1 to run live broker tests")
 	}
 	a := liveAdminClient(t)
-	defer a.Shutdown(t.Context())
+	defer a.Shutdown(context.Background())
 
 	cmd := rmqremote.NewRemotingCommand(rmqremote.RequestGetAllTopicListFromNameSrv, nil, nil)
 	a.signIfACL(cmd)
@@ -120,7 +121,7 @@ func TestLiveExamineTopicRouteInfo(t *testing.T) {
 		t.Skip("set RMQ_LIVE_TESTS=1 to run live broker tests")
 	}
 	a := liveAdminClient(t)
-	defer a.Shutdown(t.Context())
+	defer a.Shutdown(context.Background())
 
 	tl, err := a.FetchAllTopicList()
 	if err != nil {
@@ -172,7 +173,7 @@ func TestLiveFetchBrokerRuntimeStats(t *testing.T) {
 		t.Skip("set RMQ_LIVE_TESTS=1 to run live broker tests")
 	}
 	a := liveAdminClient(t)
-	defer a.Shutdown(t.Context())
+	defer a.Shutdown(context.Background())
 
 	ci, err := a.ExamineBrokerClusterInfo()
 	if err != nil {
@@ -240,7 +241,7 @@ func TestLiveBrokerRPCs(t *testing.T) {
 		t.Skip("set RMQ_LIVE_TESTS=1 to run live broker tests")
 	}
 	a := liveAdminClient(t)
-	defer a.Shutdown(t.Context())
+	defer a.Shutdown(context.Background())
 
 	ci, err := a.ExamineBrokerClusterInfo()
 	if err != nil {
@@ -341,7 +342,7 @@ func TestLiveQueryMsgByOffset(t *testing.T) {
 		t.Skip("set RMQ_LIVE_TESTS=1 to run live broker tests")
 	}
 	a := liveAdminClient(t)
-	defer a.Shutdown(t.Context())
+	defer a.Shutdown(context.Background())
 
 	ci, _ := a.ExamineBrokerClusterInfo()
 	var brokerAddr string
@@ -391,7 +392,7 @@ func TestDebugRouteShape(t *testing.T) {
 		t.Skip("live")
 	}
 	a := liveAdminClient(t)
-	defer a.Shutdown(t.Context())
+	defer a.Shutdown(context.Background())
 	for _, topic := range []string{"HA_REAL_ROUTE_TEST", "DefaultCluster", "BenchmarkTopic"} {
 		cmd := rmqremote.NewRemotingCommand(rmqremote.RequestGetRouteInfoByTopic, topicHeader{topic: topic}, nil)
 		a.signIfACL(cmd)
@@ -404,7 +405,7 @@ func TestDebugRouteShape(t *testing.T) {
 func TestDebugConsumerConn(t *testing.T) {
 	if !liveEnabled() { t.Skip("live") }
 	a := liveAdminClient(t)
-	defer a.Shutdown(t.Context())
+	defer a.Shutdown(context.Background())
 	for _, addr := range []string{"127.0.0.1:10911", "127.0.0.1:20911"} {
 		cmd := rmqremote.NewRemotingCommand(rmqremote.RequestGetConsumerListByGroup, groupHeader{consumerGroup: "ConsumerGroup9"}, nil)
 		a.signIfACL(cmd)
@@ -427,7 +428,7 @@ func TestLiveACLSigning(t *testing.T) {
 		t.Skip("set RMQ_LIVE_TESTS=1 to run live broker tests")
 	}
 	probeClient := NewAdminClient(liveNamesrv(), false, "", "", 5*time.Second)
-	defer probeClient.Shutdown(t.Context())
+	defer probeClient.Shutdown(context.Background())
 
 	// namesrv RPCs are never ACL-checked; use one to discover a broker address.
 	ci, err := probeClient.ExamineBrokerClusterInfo()
@@ -459,7 +460,7 @@ func TestLiveACLSigning(t *testing.T) {
 		t.Fatal("broker enforces ACL but RMQ_ACCESS_KEY/RMQ_SECRET_KEY not set")
 	}
 	signed := NewAdminClient(liveNamesrv(), true, ak, sk, 5*time.Second)
-	defer signed.Shutdown(t.Context())
+	defer signed.Shutdown(context.Background())
 	stats, err := signed.FetchBrokerRuntimeStats(brokerAddr)
 	if err != nil {
 		t.Fatalf("signed FetchBrokerRuntimeStats failed (signing broken?): %v", err)
