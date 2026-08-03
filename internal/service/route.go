@@ -119,10 +119,38 @@ func (a *AdminClient) ExamineConsumerConnectionInfo(group string) (*ConsumerConn
 		}
 		merged.ConnectionSet = append(merged.ConnectionSet, cc.ConnectionSet...)
 	}
+	merged.ConnectionSet = dedupConnectionsByClientId(merged.ConnectionSet)
 	if len(merged.ConnectionSet) == 0 {
 		return merged, &rpcError{code: rmqremote.ResponseConsumerNotOnline, remark: "Not found the consumer group connection"}
 	}
 	return merged, nil
+}
+
+// dedupConnectionsByClientId keeps the first Connection per distinct ClientId.
+// ClientId is the stable identity of a consumer instance; a consumer connects to
+// every broker hosting its queues, so merging per-broker connection sets yields
+// one entry per (broker, consumer) pair. Deduping by ClientId collapses those to
+// one entry per consumer instance (matching how Java sees one connection per
+// consumer from the single broker it queries). Empty-ClientId entries are kept
+// as-is so a broker that failed to set ClientId isn't collapsed with others.
+func dedupConnectionsByClientId(conns []Connection) []Connection {
+	if len(conns) <= 1 {
+		return conns
+	}
+	seen := make(map[string]struct{}, len(conns))
+	out := make([]Connection, 0, len(conns))
+	for _, c := range conns {
+		if c.ClientId == "" {
+			out = append(out, c)
+			continue
+		}
+		if _, dup := seen[c.ClientId]; dup {
+			continue
+		}
+		seen[c.ClientId] = struct{}{}
+		out = append(out, c)
+	}
+	return out
 }
 
 // QueryTopicConsumeByWho ports DefaultMQAdminExt.queryTopicConsumeByWho: route,
