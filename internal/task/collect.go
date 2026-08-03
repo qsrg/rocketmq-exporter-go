@@ -23,6 +23,7 @@ import (
 	"log/slog"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/qsrg/rocketmq-exporter-go/internal/collector"
@@ -35,7 +36,34 @@ import (
 const (
 	retryTopicPrefix = "%RETRY%" // MixAll.RETRY_GROUP_TOPIC_PREFIX
 	dlqTopicPrefix   = "%DLQ%"   // MixAll.DLQ_GROUP_TOPIC_PREFIX
+
+	// collectionConcurrency is the max number of topics processed concurrently
+	// within a single collection task. The per-topic loops were previously
+	// sequential, which at scale (hundreds of topics × many RPCs each, each RPC
+	// a fresh TCP dial) pushed a single collection cycle past the 60s metric TTL
+	// and dropped early-collected samples. Bounded concurrency keeps a cycle
+	// well under the TTL. The collector and the per-call-dial admin client are
+	// both concurrency-safe; per-task shared maps guard themselves.
+	collectionConcurrency = 10
 )
+
+// parallelTopics runs fn for each topic with at most collectionConcurrency
+// goroutines and blocks until all complete. fn must be goroutine-safe w.r.t.
+// any shared state it touches.
+func parallelTopics(topics []string, fn func(topic string)) {
+	sem := make(chan struct{}, collectionConcurrency)
+	var wg sync.WaitGroup
+	for _, topic := range topics {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(t string) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			fn(t)
+		}(topic)
+	}
+	wg.Wait()
+}
 
 // CollectTask is the Go port of MetricsCollectTask. It holds the admin client,
 // the metric store, the enable-collect flag, and the worker pool. The six
@@ -133,16 +161,16 @@ func (t *CollectTask) CollectTopicOffset(_ context.Context) {
 		log.Error("collectTopicOffset: cluster", "err", err)
 		return
 	}
-	for _, topic := range tl.TopicList {
+	parallelTopics(tl.TopicList, func(topic string) {
 		tts, err := t.Admin.ExamineTopicStats(topic)
 		if err != nil {
 			log.Error("collectTopicOffset: getting topic stats", "topic", topic, "err", err)
-			continue
+			return
 		}
 		entries, err := tts.Entries()
 		if err != nil {
 			log.Error("collectTopicOffset: parse topic stats", "topic", topic, "err", err)
-			continue
+			return
 		}
 		brokerOffset := map[string]int64{}
 		brokerTs := map[string]int64{}
@@ -156,7 +184,7 @@ func (t *CollectTask) CollectTopicOffset(_ context.Context) {
 		for bn, off := range brokerOffset {
 			t.Coll.AddTopicOffsetMetric(cluster, bn, topic, brokerTs[bn], float64(off))
 		}
-	}
+	})
 	log.Info("topic offset collection task finished", "cost", time.Since(start))
 }
 
@@ -226,17 +254,18 @@ func (t *CollectTask) CollectConsumerOffset(_ context.Context) {
 		log.Error("collectConsumerOffset: broker addrs", "err", err)
 		return
 	}
+	var groupCollectedMu sync.Mutex
 	groupCollected := map[string]bool{}
-	for _, topic := range tl.TopicList {
+	parallelTopics(tl.TopicList, func(topic string) {
 		if strings.HasPrefix(topic, dlqTopicPrefix) {
-			continue
+			return
 		}
 		gl, err := t.Admin.QueryTopicConsumeByWho(topic)
 		if err != nil {
-			continue // Java: silently continue
+			return // Java: silently continue
 		}
 		if gl == nil || len(gl.GroupList) == 0 {
-			continue
+			return
 		}
 		for _, group := range gl.GroupList {
 			var countOfOnline int
@@ -260,9 +289,19 @@ func (t *CollectTask) CollectConsumerOffset(_ context.Context) {
 			}
 			t.Coll.AddGroupCountMetric(group, cAddrs, localAddrs, countOfOnline)
 
-			if countOfOnline > 0 && !groupCollected[group] {
-				t.Pool.Submit(NewClientMetricTask(t.Admin, t.Coll, group, cc))
-				groupCollected[group] = true
+			if countOfOnline > 0 {
+				// Guard the per-group client-metric submission so a group that
+				// subscribes to multiple topics (processed concurrently) is
+				// submitted exactly once.
+				groupCollectedMu.Lock()
+				first := !groupCollected[group]
+				if first {
+					groupCollected[group] = true
+				}
+				groupCollectedMu.Unlock()
+				if first {
+					t.Pool.Submit(NewClientMetricTask(t.Admin, t.Coll, group, cc))
+				}
 			}
 
 			cs, err := t.Admin.ExamineConsumeStats(group, topic)
@@ -347,7 +386,7 @@ func (t *CollectTask) CollectConsumerOffset(_ context.Context) {
 				}
 			}
 		}
-	}
+	})
 	log.Info("consumer offset collection task finished", "cost", time.Since(start))
 }
 
@@ -383,14 +422,14 @@ func (t *CollectTask) CollectBrokerStatsTopic(_ context.Context) {
 		log.Error("collectBrokerStatsTopic: cluster info", "err", err)
 		return
 	}
-	for _, topic := range tl.TopicList {
+	parallelTopics(tl.TopicList, func(topic string) {
 		if strings.HasPrefix(topic, retryTopicPrefix) || strings.HasPrefix(topic, dlqTopicPrefix) {
-			continue
+			return
 		}
 		route, err := t.Admin.ExamineTopicRouteInfo(topic)
 		if err != nil {
 			log.Error("collectBrokerStatsTopic: fetch topic route", "topic", topic, "err", err)
-			continue
+			return
 		}
 		for _, bd := range route.BrokerDatas {
 			masterAddr := ""
@@ -421,7 +460,7 @@ func (t *CollectTask) CollectBrokerStatsTopic(_ context.Context) {
 
 		gl, err := t.Admin.QueryTopicConsumeByWho(topic)
 		if err != nil || gl == nil || len(gl.GroupList) == 0 {
-			continue
+			return
 		}
 		for _, group := range gl.GroupList {
 			statsKey := topic + "@" + group
@@ -450,7 +489,7 @@ func (t *CollectTask) CollectBrokerStatsTopic(_ context.Context) {
 				}
 			}
 		}
-	}
+	})
 	log.Info("broker topic stats collection task finished", "cost", time.Since(start))
 }
 
