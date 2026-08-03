@@ -47,20 +47,26 @@ const (
 	collectionConcurrency = 10
 )
 
-// parallelTopics runs fn for each topic with at most collectionConcurrency
-// goroutines and blocks until all complete. fn must be goroutine-safe w.r.t.
-// any shared state it touches.
-func parallelTopics(topics []string, fn func(topic string)) {
+// topicGroup is a (topic, consumer-group) pair enumerated by collectConsumerOffset.
+type topicGroup struct {
+	topic string
+	group string
+}
+
+// parallel runs fn for each item with at most collectionConcurrency goroutines
+// and blocks until all complete. fn must be goroutine-safe w.r.t. any shared
+// state it touches.
+func parallel[T any](items []T, fn func(item T)) {
 	sem := make(chan struct{}, collectionConcurrency)
 	var wg sync.WaitGroup
-	for _, topic := range topics {
+	for _, item := range items {
 		wg.Add(1)
 		sem <- struct{}{}
-		go func(t string) {
+		go func(it T) {
 			defer wg.Done()
 			defer func() { <-sem }()
-			fn(t)
-		}(topic)
+			fn(it)
+		}(item)
 	}
 	wg.Wait()
 }
@@ -161,7 +167,7 @@ func (t *CollectTask) CollectTopicOffset(_ context.Context) {
 		log.Error("collectTopicOffset: cluster", "err", err)
 		return
 	}
-	parallelTopics(tl.TopicList, func(topic string) {
+	parallel(tl.TopicList, func(topic string) {
 		tts, err := t.Admin.ExamineTopicStats(topic)
 		if err != nil {
 			log.Error("collectTopicOffset: getting topic stats", "topic", topic, "err", err)
@@ -256,134 +262,147 @@ func (t *CollectTask) CollectConsumerOffset(_ context.Context) {
 	}
 	var groupCollectedMu sync.Mutex
 	groupCollected := map[string]bool{}
-	parallelTopics(tl.TopicList, func(topic string) {
+	// Pass 1: enumerate (topic, group) pairs. Each topic is one
+	// QueryTopicConsumeByWho RPC, parallelized at the topic level.
+	var pairsMu sync.Mutex
+	var pairs []topicGroup
+	parallel(tl.TopicList, func(topic string) {
 		if strings.HasPrefix(topic, dlqTopicPrefix) {
 			return
 		}
 		gl, err := t.Admin.QueryTopicConsumeByWho(topic)
-		if err != nil {
+		if err != nil || gl == nil || len(gl.GroupList) == 0 {
 			return // Java: silently continue
 		}
-		if gl == nil || len(gl.GroupList) == 0 {
+		pairsMu.Lock()
+		for _, group := range gl.GroupList {
+			pairs = append(pairs, topicGroup{topic: topic, group: group})
+		}
+		pairsMu.Unlock()
+	})
+	// Pass 2: process each (topic, group) concurrently. The per-group work
+	// (examineConsumerConnectionInfo + examineConsumeStats + queryMsgByOffset per
+	// queue) is the heavy part -- ~20 RPCs/group, 80% of which is the per-queue
+	// queryMsgByOffset. Parallelizing at the group level (not just the topic
+	// level) keeps this fast regardless of how groups distribute across topics;
+	// the prior topic-only concurrency left groups sequential within a topic,
+	// which at scale pushed a cycle past the metric TTL.
+	parallel(pairs, func(p topicGroup) {
+		topic, group := p.topic, p.group
+		cc, err := t.Admin.ExamineConsumerConnectionInfo(group)
+		var countOfOnline int
+		if err != nil {
+			t.handleTopicNotExist(topic, group, err)
+		} else {
+			countOfOnline = len(cc.ConnectionSet)
+		}
+
+		cAddrs, localAddrs := "", ""
+		if countOfOnline > 0 {
+			addrs := make([]string, 0, countOfOnline)
+			ids := make([]string, 0, countOfOnline)
+			for _, conn := range cc.ConnectionSet {
+				addrs = append(addrs, conn.ClientAddr)
+				ids = append(ids, conn.ClientId)
+			}
+			cAddrs, localAddrs = util.ClientAddresses(addrs, ids)
+		}
+		t.Coll.AddGroupCountMetric(group, cAddrs, localAddrs, countOfOnline)
+
+		if countOfOnline > 0 {
+			// Guard the per-group client-metric submission so a group that
+			// subscribes to multiple topics (processed concurrently) is
+			// submitted exactly once.
+			groupCollectedMu.Lock()
+			first := !groupCollected[group]
+			if first {
+				groupCollected[group] = true
+			}
+			groupCollectedMu.Unlock()
+			if first {
+				t.Pool.Submit(NewClientMetricTask(t.Admin, t.Coll, group, cc))
+			}
+		}
+
+		cs, err := t.Admin.ExamineConsumeStats(group, topic)
+		if err != nil {
+			t.handleTopicNotExist(topic, group, err)
 			return
 		}
-		for _, group := range gl.GroupList {
-			var countOfOnline int
-			var cc *service.ConsumerConnection
-			cc, err = t.Admin.ExamineConsumerConnectionInfo(group)
-			if err != nil {
-				t.handleTopicNotExist(topic, group, err)
-			} else {
-				countOfOnline = len(cc.ConnectionSet)
-			}
+		entries, err := cs.Entries()
+		if err != nil || len(entries) == 0 {
+			return
+		}
+		diff, _ := cs.ComputeTotalDiff()
+		ord := messageModelOrdinal("")
+		if cc != nil {
+			ord = messageModelOrdinal(cc.MessageModel)
+		}
+		t.Coll.AddGroupDiffMetric(strconv.Itoa(countOfOnline), group, topic, ord, diff)
 
-			cAddrs, localAddrs := "", ""
-			if countOfOnline > 0 {
-				addrs := make([]string, 0, countOfOnline)
-				ids := make([]string, 0, countOfOnline)
-				for _, conn := range cc.ConnectionSet {
-					addrs = append(addrs, conn.ClientAddr)
-					ids = append(ids, conn.ClientId)
-				}
-				cAddrs, localAddrs = util.ClientAddresses(addrs, ids)
-			}
-			t.Coll.AddGroupCountMetric(group, cAddrs, localAddrs, countOfOnline)
+		// per-broker consumer offset (CLUSTERING)
+		consumeOffsetMap := map[string]int64{}
+		for _, e := range entries {
+			consumeOffsetMap[e.Queue.BrokerName] += e.Offset.ConsumerOffset
+		}
+		for bn, off := range consumeOffsetMap {
+			t.Coll.AddGroupBrokerTotalOffsetMetric(cluster, bn, topic, group, off)
+		}
 
-			if countOfOnline > 0 {
-				// Guard the per-group client-metric submission so a group that
-				// subscribes to multiple topics (processed concurrently) is
-				// submitted exactly once.
-				groupCollectedMu.Lock()
-				first := !groupCollected[group]
-				if first {
-					groupCollected[group] = true
-				}
-				groupCollectedMu.Unlock()
-				if first {
-					t.Pool.Submit(NewClientMetricTask(t.Admin, t.Coll, group, cc))
-				}
-			}
-
-			cs, err := t.Admin.ExamineConsumeStats(group, topic)
-			if err != nil {
-				t.handleTopicNotExist(topic, group, err)
+		// storetime latency (CLUSTERING only) via queryMsgByOffset.
+		// Ports Java collectConsumerOffset: a latency sample is emitted for
+		// every broker that has a queue in the consume stats, with lagTime 0
+		// when the pull returns NO_NEW (Java: !containsKey -> put(lagTime>0?
+		// lagTime:0)). If any pull errors, the whole group's latency is
+		// skipped (Java wraps the loop in try/catch and abandons the map).
+		latencyMap := map[string]int64{}
+		latencyOK := true
+		for _, e := range entries {
+			addr, ok := brokerAddrs[e.Queue.BrokerName]
+			if !ok || addr == "" {
 				continue
 			}
-			entries, err := cs.Entries()
-			if err != nil || len(entries) == 0 {
-				continue
+			pr, perr := t.Admin.QueryMsgByOffset(addr, e.Queue, e.Offset.ConsumerOffset)
+			if perr != nil {
+				// Java: an exception in the loop abandons the whole map.
+				latencyOK = false
+				break
 			}
-			diff, _ := cs.ComputeTotalDiff()
-			ord := messageModelOrdinal("")
-			if cc != nil {
-				ord = messageModelOrdinal(cc.MessageModel)
-			}
-			t.Coll.AddGroupDiffMetric(strconv.Itoa(countOfOnline), group, topic, ord, diff)
-
-			// per-broker consumer offset (CLUSTERING)
-			consumeOffsetMap := map[string]int64{}
-			for _, e := range entries {
-				consumeOffsetMap[e.Queue.BrokerName] += e.Offset.ConsumerOffset
-			}
-			for bn, off := range consumeOffsetMap {
-				t.Coll.AddGroupBrokerTotalOffsetMetric(cluster, bn, topic, group, off)
-			}
-
-			// storetime latency (CLUSTERING only) via queryMsgByOffset.
-			// Ports Java collectConsumerOffset: a latency sample is emitted for
-			// every broker that has a queue in the consume stats, with lagTime 0
-			// when the pull returns NO_NEW (Java: !containsKey -> put(lagTime>0?
-			// lagTime:0)). If any pull errors, the whole group's latency is
-			// skipped (Java wraps the loop in try/catch and abandons the map).
-			latencyMap := map[string]int64{}
-			latencyOK := true
-			for _, e := range entries {
-				addr, ok := brokerAddrs[e.Queue.BrokerName]
-				if !ok || addr == "" {
-					continue
+			var lag int64
+			if pr.Status == "FOUND" {
+				lag = time.Now().UnixMilli() - pr.StoreTimestamp
+				if e.Offset.BrokerOffset == e.Offset.ConsumerOffset {
+					lag = 0
 				}
-				pr, perr := t.Admin.QueryMsgByOffset(addr, e.Queue, e.Offset.ConsumerOffset)
-				if perr != nil {
-					// Java: an exception in the loop abandons the whole map.
+			} else if pr.Status == "OFFSET_ILLEGAL" {
+				pr2, perr2 := t.Admin.QueryMsgByOffset(addr, e.Queue, pr.MinOffset)
+				if perr2 != nil {
 					latencyOK = false
 					break
 				}
-				var lag int64
-				if pr.Status == "FOUND" {
-					lag = time.Now().UnixMilli() - pr.StoreTimestamp
-					if e.Offset.BrokerOffset == e.Offset.ConsumerOffset {
-						lag = 0
-					}
-				} else if pr.Status == "OFFSET_ILLEGAL" {
-					pr2, perr2 := t.Admin.QueryMsgByOffset(addr, e.Queue, pr.MinOffset)
-					if perr2 != nil {
-						latencyOK = false
-						break
-					}
-					if pr2.Status == "FOUND" {
-						lag = time.Now().UnixMilli() - pr2.StoreTimestamp
-					}
-				}
-				// Java: first queue for a broker seeds the map (0 if no lag);
-				// subsequent queues only raise it.
-				cur, exists := latencyMap[e.Queue.BrokerName]
-				if !exists {
-					if lag > 0 {
-						latencyMap[e.Queue.BrokerName] = lag
-					} else {
-						latencyMap[e.Queue.BrokerName] = 0
-					}
-				} else if lag > cur {
-					latencyMap[e.Queue.BrokerName] = lag
+				if pr2.Status == "FOUND" {
+					lag = time.Now().UnixMilli() - pr2.StoreTimestamp
 				}
 			}
-			if !latencyOK {
-				log.Warn("addGroupGetLatencyByStoreTimeMetric error: a pull failed; skipping latency for group",
-					"topic", topic, "group", group)
-			} else {
-				for bn, lag := range latencyMap {
-					t.Coll.AddGroupGetLatencyByStoreTimeMetric(cluster, bn, topic, group, lag)
+			// Java: first queue for a broker seeds the map (0 if no lag);
+			// subsequent queues only raise it.
+			cur, exists := latencyMap[e.Queue.BrokerName]
+			if !exists {
+				if lag > 0 {
+					latencyMap[e.Queue.BrokerName] = lag
+				} else {
+					latencyMap[e.Queue.BrokerName] = 0
 				}
+			} else if lag > cur {
+				latencyMap[e.Queue.BrokerName] = lag
+			}
+		}
+		if !latencyOK {
+			log.Warn("addGroupGetLatencyByStoreTimeMetric error: a pull failed; skipping latency for group",
+				"topic", topic, "group", group)
+		} else {
+			for bn, lag := range latencyMap {
+				t.Coll.AddGroupGetLatencyByStoreTimeMetric(cluster, bn, topic, group, lag)
 			}
 		}
 	})
@@ -422,7 +441,7 @@ func (t *CollectTask) CollectBrokerStatsTopic(_ context.Context) {
 		log.Error("collectBrokerStatsTopic: cluster info", "err", err)
 		return
 	}
-	parallelTopics(tl.TopicList, func(topic string) {
+	parallel(tl.TopicList, func(topic string) {
 		if strings.HasPrefix(topic, retryTopicPrefix) || strings.HasPrefix(topic, dlqTopicPrefix) {
 			return
 		}
