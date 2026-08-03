@@ -23,8 +23,12 @@ coverage.html
 # IDE - Trae
 .trae/
 
-# Claude Code 本地设置（权限等，因人而异）
-.claude/settings.local.json
+# Claude Code（本地 agent 配置/技能，因人而异）
+.claude/
+
+# 项目内部规约/工作流文档（不随发布仓库分发）
+CLAUDE.md
+openspec/
 
 # 操作系统
 .DS_Store
