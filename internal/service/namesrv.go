@@ -16,7 +16,7 @@
 package service
 
 import (
-	"github.com/wcf/rmq-exporter/internal/rmqremote"
+	"github.com/qsrg/rocketmq-exporter-go/internal/rmqremote"
 )
 
 // ClusterInfo is the body of GET_BROKER_CLUSTER_INFO (106), returned by

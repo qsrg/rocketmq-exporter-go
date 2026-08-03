@@ -25,9 +25,9 @@ import (
 
 	dto "github.com/prometheus/client_model/go"
 
-	"github.com/wcf/rmq-exporter/internal/collector"
-	"github.com/wcf/rmq-exporter/internal/config"
-	"github.com/wcf/rmq-exporter/internal/service"
+	"github.com/qsrg/rocketmq-exporter-go/internal/collector"
+	"github.com/qsrg/rocketmq-exporter-go/internal/config"
+	"github.com/qsrg/rocketmq-exporter-go/internal/service"
 )
 
 func liveEnabled() bool { return os.Getenv("RMQ_LIVE_TESTS") == "1" }

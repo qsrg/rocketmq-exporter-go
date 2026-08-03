@@ -23,7 +23,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/wcf/rmq-exporter/internal/util"
+	"github.com/qsrg/rocketmq-exporter-go/internal/util"
 )
 
 // TpsTriple is the {ten, sixty, sixHundred} triple shared by PutTps and the

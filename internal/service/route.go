@@ -19,7 +19,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/wcf/rmq-exporter/internal/rmqremote"
+	"github.com/qsrg/rocketmq-exporter-go/internal/rmqremote"
 )
 
 // retryTopic is MixAll.getRetryTopic(group) = "%RETRY%" + group (the retry

@@ -24,8 +24,8 @@ import (
 	"github.com/apache/rocketmq-client-go/v2/primitive"
 	"github.com/apache/rocketmq-client-go/v2/producer"
 
-	"github.com/wcf/rmq-exporter/internal/config"
-	"github.com/wcf/rmq-exporter/internal/service"
+	"github.com/qsrg/rocketmq-exporter-go/internal/config"
+	"github.com/qsrg/rocketmq-exporter-go/internal/service"
 )
 
 // Adapter wires the real rocketmq-client-go producer/consumer and the admin

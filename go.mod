@@ -1,4 +1,4 @@
-module github.com/wcf/rmq-exporter
+module github.com/qsrg/rocketmq-exporter-go
 
 go 1.26.3
 

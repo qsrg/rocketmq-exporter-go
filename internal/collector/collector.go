@@ -22,7 +22,7 @@ import (
 
 	dto "github.com/prometheus/client_model/go"
 
-	"github.com/wcf/rmq-exporter/internal/model"
+	"github.com/qsrg/rocketmq-exporter-go/internal/model"
 )
 
 // MetricsCollector is the Go port of RMQMetricsCollector. It is both the metric

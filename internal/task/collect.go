@@ -25,11 +25,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/wcf/rmq-exporter/internal/collector"
-	"github.com/wcf/rmq-exporter/internal/rmqremote"
-	"github.com/wcf/rmq-exporter/internal/model"
-	"github.com/wcf/rmq-exporter/internal/service"
-	"github.com/wcf/rmq-exporter/internal/util"
+	"github.com/qsrg/rocketmq-exporter-go/internal/collector"
+	"github.com/qsrg/rocketmq-exporter-go/internal/rmqremote"
+	"github.com/qsrg/rocketmq-exporter-go/internal/model"
+	"github.com/qsrg/rocketmq-exporter-go/internal/service"
+	"github.com/qsrg/rocketmq-exporter-go/internal/util"
 )
 
 const (

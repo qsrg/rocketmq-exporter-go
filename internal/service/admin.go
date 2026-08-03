@@ -26,7 +26,7 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/wcf/rmq-exporter/internal/rmqremote"
+	"github.com/qsrg/rocketmq-exporter-go/internal/rmqremote"
 )
 
 // AdminClient wraps a remoting client and namesrv address. It is constructed

@@ -16,7 +16,7 @@
 package collector
 
 import (
-	"github.com/wcf/rmq-exporter/internal/model"
+	"github.com/qsrg/rocketmq-exporter-go/internal/model"
 )
 
 // buildRuntimeMetrics returns the ~50 non-distribute broker-runtime gauges, each

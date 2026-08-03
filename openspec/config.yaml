@@ -5,7 +5,7 @@ context: |
   Project: Go rewrite of Apache RocketMQ Exporter (Java v0.0.3-SNAPSHOT).
   Source of truth for behavior: CLAUDE.md (governing spec) + Java source at
   /Users/wcf/java-project/rocketmq-exporter. Go project root:
-  /Users/wcf/go-project/rmq-exporter (module github.com/wcf/rmq-exporter).
+  /Users/wcf/go-project/rmq-exporter (module github.com/qsrg/rocketmq-exporter-go).
   Target RocketMQ 4.x (align Java 4.9.8 protocol).
 
   GOLDEN RULE - metric fidelity: Prometheus metric names, types (counter/gauge),

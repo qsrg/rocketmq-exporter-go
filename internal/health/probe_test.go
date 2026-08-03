@@ -28,8 +28,8 @@ import (
 	"github.com/apache/rocketmq-client-go/v2/consumer"
 	"github.com/apache/rocketmq-client-go/v2/primitive"
 
-	"github.com/wcf/rmq-exporter/internal/collector"
-	"github.com/wcf/rmq-exporter/internal/config"
+	"github.com/qsrg/rocketmq-exporter-go/internal/collector"
+	"github.com/qsrg/rocketmq-exporter-go/internal/config"
 )
 
 // --- fakes ---

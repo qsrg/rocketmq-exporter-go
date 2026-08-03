@@ -20,7 +20,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/wcf/rmq-exporter/internal/rmqremote"
+	"github.com/qsrg/rocketmq-exporter-go/internal/rmqremote"
 )
 
 // writeFixture writes a captured raw response body to testdata/<name>.

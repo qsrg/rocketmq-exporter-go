@@ -1,6 +1,6 @@
 ## 1. Module 与基础脚手架
 
-- [x] 1.1 在 `go.mod` 中设模块路径为 `github.com/wcf/rmq-exporter`；确认 `prometheus/client_golang v1.23.2` 与 `robfig/cron/v3 v3.0.1` 已存在：`cd /Users/wcf/go-project/rmq-exporter && go mod tidy && go build ./...`
+- [x] 1.1 在 `go.mod` 中设模块路径为 `github.com/qsrg/rocketmq-exporter-go`；确认 `prometheus/client_golang v1.23.2` 与 `robfig/cron/v3 v3.0.1` 已存在：`cd /Users/wcf/go-project/rmq-exporter && go mod tidy && go build ./...`
 - [x] 1.2 创建包目录：`mkdir -p cmd/rmq-exporter internal/{config,collector,task,service,model,util,rmqremote,otlp}`
 - [x] 1.3 添加 ASF 2.0 license 头到模板，并写入 `internal/otlp/doc.go`（预留，`// Package otlp is reserved for Phase 2 OTLP gRPC.`）——确认 `go vet ./...` 干净。
 
@@ -32,7 +32,7 @@
 > Phase 1.5，待有真实 ACL broker 时再做。因此 5.4 不再是 5.x 的前置门。
 
 - [x] 5.1 对照 `/Users/wcf/java-project/rocketmq-4.9.8`（`org/apache/rocketmq/common/protocol/RequestCode.java`），逐一确认 design D2 中每个 RPC 的 `RequestCode` 整数；结论记入 `internal/rmqremote/CODES.md`。**5.3 前必须完成此步。**
-- [x] 5.2 把 `rocketmq-client-go/v2/internal/remote`（及它依赖的 `primitive`/`protocol` 最小集）拷入 `internal/rmqremote/`；重写 import path 为 `github.com/wcf/rmq-exporter/internal/rmqremote`。运行：`go build ./internal/rmqremote/`
+- [x] 5.2 把 `rocketmq-client-go/v2/internal/remote`（及它依赖的 `primitive`/`protocol` 最小集）拷入 `internal/rmqremote/`；重写 import path 为 `github.com/qsrg/rocketmq-exporter-go/internal/rmqremote`。运行：`go build ./internal/rmqremote/`
 - [x] 5.3 移植 `RemotingCommand` 编解码，body 用 `encoding/json`（RocketMQ 4.x wire = fastjson）；单测一个已知 command 的 编码→解码 往返。运行：`go test ./internal/rmqremote/`
 - 5.4 ACL 子 spike：**延后至 Phase 1.5**（见上方说明）。配置开关 `enable-acl` 在 6.1 解析；为 true 时一期仅记日志告警、不签名。
 

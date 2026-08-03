@@ -22,7 +22,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/wcf/rmq-exporter/internal/collector"
+	"github.com/qsrg/rocketmq-exporter-go/internal/collector"
 )
 
 func mkColl() *collector.MetricsCollector { return collector.New(time.Minute) }

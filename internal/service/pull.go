@@ -20,7 +20,7 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/wcf/rmq-exporter/internal/rmqremote"
+	"github.com/qsrg/rocketmq-exporter-go/internal/rmqremote"
 )
 
 // PullStatus mirrors org.apache.rocketmq.client.consumer.PullStatus (string

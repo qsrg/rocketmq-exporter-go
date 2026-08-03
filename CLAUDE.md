@@ -5,7 +5,7 @@
 用 Go 重写 Apache RocketMQ Exporter（Java 源码 v0.0.3-SNAPSHOT）。
 - Java 源码（行为对齐的**唯一事实来源**）：`/Users/wcf/java-project/rocketmq-exporter`
 - Go 项目根：`/Users/wcf/go-project/rmq-exporter`
-- 模块路径：`github.com/<rmq>/rmq-exporter`（TODO：确定 owner 后填入 `go.mod`）
+- 模块路径：`github.com/qsrg/rocketmq-exporter-go`（仓库 https://github.com/qsrg/rocketmq-exporter-go）
 - 目标 RocketMQ：**4.x**，对齐 Java 4.9.8 协议
 - RocketMQ 4.x 源码位置：/Users/wcf/java-project/rocketmq-4.9.8
 

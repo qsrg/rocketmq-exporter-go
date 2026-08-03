@@ -21,7 +21,7 @@ import (
 
 	dto "github.com/prometheus/client_model/go"
 
-	"github.com/wcf/rmq-exporter/internal/model"
+	"github.com/qsrg/rocketmq-exporter-go/internal/model"
 )
 
 // expectedFamily is the golden snapshot of one Java gauge: name, HELP text, and

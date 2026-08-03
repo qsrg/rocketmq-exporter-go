@@ -18,8 +18,8 @@ package task
 import (
 	"log/slog"
 
-	"github.com/wcf/rmq-exporter/internal/collector"
-	"github.com/wcf/rmq-exporter/internal/service"
+	"github.com/qsrg/rocketmq-exporter-go/internal/collector"
+	"github.com/qsrg/rocketmq-exporter-go/internal/service"
 )
 
 // NewClientMetricTask ports ClientMetricTaskRunnable. It fetches each online

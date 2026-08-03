@@ -4,7 +4,7 @@ Apache RocketMQ Exporter 目前仅有 Java/Spring Boot 实现（`v0.0.3-SNAPSHOT
 
 ## What Changes
 
-- **新建 Go module** `github.com/wcf/rmq-exporter`，暴露单个 `GET /metrics` Prometheus 端点（默认 `:5557`，`flag`+env 配置，无 Spring/YAML）。
+- **新建 Go module** `github.com/qsrg/rocketmq-exporter-go`，暴露单个 `GET /metrics` Prometheus 端点（默认 `:5557`，`flag`+env 配置，无 Spring/YAML）。
 - **6 个 cron 采集任务**（`15 0/1 * * * ?` 语义，加载时 `?`→`*`，用 `robfig/cron/v3` + `WithSeconds()`），移植自 `task/MetricsCollectTask.java`，写入带 TTL 的缓存指标存储（`outOfTimeSeconds`）。
 - **Prometheus collector** 镜像 `collector/RMQMetricsCollector.java`——每个 gauge 的名字、HELP 文本、标签名及顺序逐字一致（如 `rocketmq_group_diff{group,topic,countOfOnlineConsumers,msgModel}`、`rocketmq_brokeruntime_put_tps10{cluster,brokerIP,brokerHost,des,boottime,broker_version}`）。
 - **Admin 客户端封装** 移植自 `service/client/MQAdminExtImpl.java` + `MQAdminInstance.java`，在 RocketMQ 4.x remoting 协议上实现 `MetricsCollectTask` 用到的读 RPC。**关键点**：`rocketmq-client-go/v2` 的 `admin` 包几乎缺少所有这些读 RPC，且其 wire layer 是内部包不可外部导入——因此我们把 remoting wire layer 及所需内部件 vendor 进本模块，原生实现这些读 RPC（Path A，已批准）。

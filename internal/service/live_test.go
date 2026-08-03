@@ -20,8 +20,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/wcf/rmq-exporter/internal/collector"
-	"github.com/wcf/rmq-exporter/internal/rmqremote"
+	"github.com/qsrg/rocketmq-exporter-go/internal/collector"
+	"github.com/qsrg/rocketmq-exporter-go/internal/rmqremote"
 )
 
 // liveNamesrv returns the test namesrv address (default 127.0.0.1:9876).

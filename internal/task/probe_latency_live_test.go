@@ -26,7 +26,7 @@ import (
 	"github.com/apache/rocketmq-client-go/v2/producer"
 	dto "github.com/prometheus/client_model/go"
 
-	"github.com/wcf/rmq-exporter/internal/collector"
+	"github.com/qsrg/rocketmq-exporter-go/internal/collector"
 )
 
 // taskProbeCredentials returns ACL credentials from the RMQ_* env vars when

@@ -18,8 +18,8 @@ package service
 import (
 	"fmt"
 
-	"github.com/wcf/rmq-exporter/internal/model"
-	"github.com/wcf/rmq-exporter/internal/rmqremote"
+	"github.com/qsrg/rocketmq-exporter-go/internal/model"
+	"github.com/qsrg/rocketmq-exporter-go/internal/rmqremote"
 )
 
 // kvTable is the wire wrapper for GET_BROKER_RUNTIME_INFO (28) and other KV

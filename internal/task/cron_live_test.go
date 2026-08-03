@@ -1,6 +1,6 @@
 // License: Apache-2.0
 package task
-import ("context";"os";"testing";"time";"github.com/robfig/cron/v3";"github.com/wcf/rmq-exporter/internal/collector";"github.com/wcf/rmq-exporter/internal/service")
+import ("context";"os";"testing";"time";"github.com/robfig/cron/v3";"github.com/qsrg/rocketmq-exporter-go/internal/collector";"github.com/qsrg/rocketmq-exporter-go/internal/service")
 func TestLiveCronScheduling(t *testing.T){
 	if os.Getenv("RMQ_LIVE_TESTS")!="1" { t.Skip("live") }
 	ctx:=context.Background()

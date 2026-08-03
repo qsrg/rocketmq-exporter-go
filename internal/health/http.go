@@ -19,7 +19,7 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/wcf/rmq-exporter/internal/collector"
+	"github.com/qsrg/rocketmq-exporter-go/internal/collector"
 )
 
 // HealthzHandler serves the cluster health snapshot as JSON. It returns 200 when

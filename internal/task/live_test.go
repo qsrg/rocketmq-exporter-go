@@ -21,8 +21,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/wcf/rmq-exporter/internal/collector"
-	"github.com/wcf/rmq-exporter/internal/service"
+	"github.com/qsrg/rocketmq-exporter-go/internal/collector"
+	"github.com/qsrg/rocketmq-exporter-go/internal/service"
 )
 
 func taskLiveEnabled() bool { return os.Getenv("RMQ_LIVE_TESTS") == "1" }
