@@ -42,9 +42,9 @@ func liveNamesrv() string {
 // liveConfig builds a config wired to the live broker (RMQ_NAMESRV) with ACL
 // credentials from the RMQ_* env vars (mirrors service.liveAdminClient). The
 // health-check rate is raised so samples accumulate quickly within the test
-// window. Relies on the broker's autoCreateTopicEnable (dev default) to
-// materialize HealthCheckTopic-<cluster> on first send; in production the user
-// pre-creates the topic (see design D7 / proposal non-goals).
+// window. The produce loop's sends auto-create HealthCheckTopic-<cluster> via
+// the broker's autoCreateTopicEnable; the consumer retries until the topic route
+// exists, so no manual topic pre-creation is needed (see probe.go addProbe).
 func liveConfig() *config.Config {
 	cfg := config.Default()
 	cfg.Namesrv = liveNamesrv()
@@ -71,7 +71,7 @@ func waitForHealthy(t *testing.T, coll *collector.MetricsCollector, timeout time
 }
 
 // findHealthSample returns the first metric value in family `name` whose labels
-// match `want` (nil matches any single-sample family).
+// contain all of `want` (subset match; nil matches any single-sample family).
 func findHealthSample(t *testing.T, coll *collector.MetricsCollector, name string, want map[string]string) (float64, bool) {
 	t.Helper()
 	fams, err := coll.Gather()
@@ -86,14 +86,22 @@ func findHealthSample(t *testing.T, coll *collector.MetricsCollector, name strin
 			if want == nil {
 				return metricVal(m), true
 			}
+			// Subset match: every wanted label is present with the wanted value.
 			match := true
-			for _, lp := range m.Label {
-				if v, ok := want[lp.GetName()]; !ok || v != lp.GetValue() {
+			for k, v := range want {
+				found := false
+				for _, lp := range m.Label {
+					if lp.GetName() == k && lp.GetValue() == v {
+						found = true
+						break
+					}
+				}
+				if !found {
 					match = false
 					break
 				}
 			}
-			if match && len(m.Label) == len(want) {
+			if match {
 				return metricVal(m), true
 			}
 		}

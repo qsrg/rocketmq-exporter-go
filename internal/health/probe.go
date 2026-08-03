@@ -107,16 +107,30 @@ type clusterProbe struct {
 	clk     Clock
 	log     *slog.Logger
 
-	consumer Consumer
+	consumerFactory ConsumerFactory // builds a fresh consumer per (re)start attempt
+	consumer        Consumer
+	consumerStarted bool // under mu; true once Subscribe+Start succeeded
+
+	// consumerRetryDone is closed when the background consumer-(re)start loop
+	// exits (consumer started, or ctx canceled). removeProbe waits on it so it
+	// never shuts down a consumer while tryStartConsumer is mid-Start.
+	consumerRetryDone chan struct{}
 
 	// recency state (protected by mu); zero Time means "never succeeded".
 	mu                 sync.Mutex
 	lastProduceSuccess time.Time
 	lastConsume        time.Time
 
-	cancel context.CancelFunc // stops produceLoop
+	cancel context.CancelFunc // stops produceLoop + consumerRetryLoop
 	done   chan struct{}      // closed when produceLoop exits
 }
+
+// consumerRetryInterval is how often the background loop retries consumer
+// Start when the topic route is not available yet (fresh cluster, broker
+// mid-restart). Short enough to come up within recency once the topic appears;
+// long enough that a permanently-missing topic doesn't build a consumer every
+// tick.
+const consumerRetryInterval = 5 * time.Second
 
 // sendOne performs a single produce attempt and records the result.
 func (p *clusterProbe) sendOne(ctx context.Context) {
@@ -225,6 +239,67 @@ func (p *clusterProbe) produceLoop(ctx context.Context) {
 	}
 }
 
+// tryStartConsumer builds, subscribes, and starts the push consumer for this
+// probe's topic. It is idempotent: once started it returns nil. On failure the
+// half-built consumer is shut down and the error returned; the caller (the
+// background retry loop) retries until the topic exists -- the producer's sends
+// auto-create it on brokers with autoCreateTopicEnable, or the operator
+// pre-creates it. This keeps the produce loop running (emitting
+// produce_total{failure}) even while the consumer cannot start, matching the
+// design's "natural failure + self-heal" intent instead of bailing the probe.
+func (p *clusterProbe) tryStartConsumer() error {
+	p.mu.Lock()
+	if p.consumerStarted || p.consumerFactory == nil {
+		p.mu.Unlock()
+		return nil
+	}
+	p.mu.Unlock()
+
+	cons, err := p.consumerFactory(p.group)
+	if err != nil {
+		return fmt.Errorf("health consumer factory for %s: %w", p.cluster, err)
+	}
+	if err := cons.Subscribe(p.topic, consumer.MessageSelector{}, p.handleMessage); err != nil {
+		_ = cons.Shutdown()
+		return fmt.Errorf("health subscribe %s for %s: %w", p.topic, p.cluster, err)
+	}
+	if err := cons.Start(); err != nil {
+		_ = cons.Shutdown()
+		return fmt.Errorf("health consumer start for %s: %w", p.cluster, err)
+	}
+	p.mu.Lock()
+	p.consumer = cons
+	p.consumerStarted = true
+	p.mu.Unlock()
+	return nil
+}
+
+// consumerRetryLoop retries tryStartConsumer every consumerRetryInterval until
+// the consumer is up or ctx is canceled. It exits immediately if the consumer
+// already started (initial addProbe attempt succeeded). removeProbe waits on
+// consumerRetryDone so it never races a mid-flight Start.
+func (p *clusterProbe) consumerRetryLoop(ctx context.Context) {
+	defer close(p.consumerRetryDone)
+	p.mu.Lock()
+	started := p.consumerStarted
+	p.mu.Unlock()
+	if started {
+		return
+	}
+	ticker := p.clk.NewTicker(consumerRetryInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.Chan():
+			if err := p.tryStartConsumer(); err == nil {
+				return // started
+			}
+		}
+	}
+}
+
 // Prober drives the per-cluster probes: a shared producer, a map of
 // clusterProbes, a 1s evaluation tick, and a cluster-refresh loop.
 type Prober struct {
@@ -288,47 +363,49 @@ func (p *Prober) evalTick() {
 	}
 }
 
-// addProbe creates and starts a clusterProbe (consumer + produce goroutine).
+// addProbe creates and starts a clusterProbe. The produce loop starts FIRST so
+// produce metrics flow immediately (and the producer's sends auto-create the
+// topic on brokers with autoCreateTopicEnable). The consumer is then started
+// best-effort; if the topic route is not available yet, a background loop
+// retries until it is. addProbe never fails: a missing topic degrades to
+// produce_total{failure} + status 0 (via recency) rather than a silent no-probe,
+// matching the design's "natural failure + self-heal" intent.
 func (p *Prober) addProbe(ctx context.Context, cluster string) error {
 	topic := p.cfg.TopicPrefix + cluster
 	group := p.cfg.GroupPrefix + cluster
 	cp := &clusterProbe{
-		cluster: cluster,
-		topic:   topic,
-		group:   group,
-		cfg:     p.cfg,
-		coll:    p.coll,
-		prod:    p.prod,
-		clk:     p.clk,
-		log:     p.log,
-		done:    make(chan struct{}),
-	}
-	cons, err := p.consumerFactory(group)
-	if err != nil {
-		return fmt.Errorf("health consumer for %s: %w", cluster, err)
-	}
-	cp.consumer = cons
-	if err := cons.Subscribe(topic, consumer.MessageSelector{}, cp.handleMessage); err != nil {
-		_ = cons.Shutdown()
-		return fmt.Errorf("health subscribe %s for %s: %w", topic, cluster, err)
-	}
-	if err := cons.Start(); err != nil {
-		// Best-effort shutdown of the half-built consumer before bailing.
-		_ = cons.Shutdown()
-		return fmt.Errorf("health consumer start for %s: %w", cluster, err)
+		cluster:           cluster,
+		topic:             topic,
+		group:             group,
+		cfg:               p.cfg,
+		coll:              p.coll,
+		prod:              p.prod,
+		clk:               p.clk,
+		log:               p.log,
+		consumerFactory:   p.consumerFactory,
+		done:              make(chan struct{}),
+		consumerRetryDone: make(chan struct{}),
 	}
 	cpctx, cancel := context.WithCancel(ctx)
 	cp.cancel = cancel
 	p.mu.Lock()
 	p.probes[cluster] = cp
 	p.mu.Unlock()
+	// Produce first: sends auto-create the topic (broker autoCreateTopicEnable)
+	// and produce_total counts flow even if the consumer cannot subscribe yet.
 	go cp.produceLoop(cpctx)
+	if err := cp.tryStartConsumer(); err != nil {
+		p.log.Warn("health consumer start deferred; retrying in background",
+			"cluster", cluster, "topic", topic, "err", err)
+	}
+	go cp.consumerRetryLoop(cpctx)
 	p.log.Info("health probe started", "cluster", cluster, "topic", topic, "group", group)
 	return nil
 }
 
-// removeProbe stops a clusterProbe: cancel its produce loop, wait for exit,
-// shut down its consumer, and clear the cluster's health samples.
+// removeProbe stops a clusterProbe: cancel its loops, wait for produceLoop and
+// the consumer retry loop to exit, shut down its consumer (if it ever started),
+// and clear the cluster's health samples.
 func (p *Prober) removeProbe(cluster string) {
 	p.mu.Lock()
 	cp, ok := p.probes[cluster]
@@ -341,9 +418,15 @@ func (p *Prober) removeProbe(cluster string) {
 	if cp.cancel != nil {
 		cp.cancel()
 	}
-	<-cp.done // produceLoop has exited
-	if err := cp.consumer.Shutdown(); err != nil {
-		p.log.Warn("health consumer shutdown", "cluster", cluster, "err", err)
+	<-cp.done              // produceLoop has exited
+	<-cp.consumerRetryDone // consumer retry loop has exited (no mid-Start race)
+	cp.mu.Lock()
+	cons := cp.consumer
+	cp.mu.Unlock()
+	if cons != nil {
+		if err := cons.Shutdown(); err != nil {
+			p.log.Warn("health consumer shutdown", "cluster", cluster, "err", err)
+		}
 	}
 	// Serialize the clear against the evalOnce pass (evalTick) so evalTick
 	// cannot re-create this cluster's samples after the clear.

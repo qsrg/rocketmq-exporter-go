@@ -34,6 +34,10 @@
 - **WHEN** 启动时集群发现 RPC 失败
 - **THEN** exporter 不退出，记录日志，下个刷新间隔重试，其余 6 个采集任务照常。
 
+#### Scenario: topic 缺失时探针不退出并自愈
+- **WHEN** 集群被发现但其 `HealthCheckTopic-<cluster>` 尚不存在（冷集群、topic 被删、或 broker 路由未传播）
+- **THEN** produce loop 照常运行（send 失败计入 `produce_total{result="failure"}` 并记日志，`last_produce_success` 不更新），consumer 启动被 deferred 并按 `consumerRetryInterval` 周期重试；探针 SHALL NOT 因 `consumer.Start` 失败而整体退出或缺失。producer 的 send 经 broker `autoCreateTopicEnable` 自动创建 topic 后（或 operator 预建后），consumer 在下次重试启动，`status` 在 recency 内恢复为 1。
+
 ### Requirement: recency 状态推导与自愈
 系统 SHALL 每 1 秒评估各集群状态：`status{produce}=1` 当且仅当 `now − last_produce_success < health-check-recency`；`status{consume}=1` 当且仅当 `now − last_consume < health-check-recency`；`status{overall}=1` 当且仅当两者均为 1。系统 SHALL NOT 维护在途表、单条消费超时或预检 supervisor。topic 或 consumer 缺失时 SHALL 依赖客户端自然失败（计数 + 日志）；集群恢复后 SHALL 自动恢复 status 为 1（与普通 RocketMQ 客户端行为一致）。
 

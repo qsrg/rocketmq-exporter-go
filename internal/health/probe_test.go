@@ -303,9 +303,9 @@ func (s *stubLister) set(clusters []string, err error) {
 }
 
 type recordingFactory struct {
-	mu       sync.Mutex
-	created  map[string]*stubConsumer // group -> consumer
-	failNext bool
+	mu        sync.Mutex
+	created   map[string]*stubConsumer // group -> consumer
+	failStart bool                     // when true, built consumers' Start fails (simulates missing topic)
 }
 
 func (f *recordingFactory) factory() ConsumerFactory {
@@ -313,6 +313,9 @@ func (f *recordingFactory) factory() ConsumerFactory {
 		f.mu.Lock()
 		defer f.mu.Unlock()
 		c := &stubConsumer{}
+		if f.failStart {
+			c.startErr = errors.New("topic route not found")
+		}
 		f.created[group] = c
 		return c, nil
 	}
@@ -563,5 +566,43 @@ func TestProduceLatencyClearedWhenUnhealthy(t *testing.T) {
 	cp.evalOnce(clk.Now())
 	if got := metricValue(t, coll, "rocketmq_health_check_latency_seconds", map[string]string{"cluster": "c1", "check": "produce"}); got != 0 {
 		t.Errorf("unhealthy produce latency = %v, want 0", got)
+	}
+}
+
+// TestAddProbeDoesNotBailOnMissingTopic locks in the bootstrap fix: when the
+// consumer cannot start (topic route missing on a fresh cluster), addProbe must
+// STILL add the probe and start the produce loop -- it must NOT bail. The
+// consumer is retried; once Start succeeds the consumer comes up. Before the
+// fix, addProbe returned an error on consumer.Start failure and the probe was
+// never added, leaving produce_total empty and the health check silent.
+func TestAddProbeDoesNotBailOnMissingTopic(t *testing.T) {
+	p, _, _, factory, _ := newReconcileProber(t)
+	factory.failStart = true // built consumers' Start fails (missing topic)
+	ctx := context.Background()
+
+	p.reconcileClusters(ctx, []string{"A"})
+	// The probe MUST exist despite the consumer start failure.
+	probes := p.snapshotProbes()
+	if len(probes) != 1 || probes["A"] == nil {
+		t.Fatalf("probe A missing after reconcile with failing consumer; probes=%v", probes)
+	}
+	cp := probes["A"]
+	if cp.consumerStarted {
+		t.Error("consumer should NOT be started when Start fails")
+	}
+
+	// Topic "appears": make the factory build a succeeding consumer, then a
+	// direct tryStartConsumer (mirroring the background retry loop) brings it up.
+	factory.failStart = false
+	if err := cp.tryStartConsumer(); err != nil {
+		t.Fatalf("tryStartConsumer after topic appeared: %v", err)
+	}
+	if !cp.consumerStarted {
+		t.Error("consumer should be started after successful tryStartConsumer")
+	}
+
+	p.Shutdown(ctx)
+	if got := len(p.snapshotProbes()); got != 0 {
+		t.Errorf("after Shutdown, probes = %d, want 0", got)
 	}
 }
