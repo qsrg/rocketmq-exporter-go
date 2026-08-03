@@ -24,6 +24,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/qsrg/rocketmq-exporter-go/internal/rmqremote"
@@ -44,15 +45,32 @@ type AdminClient struct {
 // NewAdminClient constructs an admin client pointed at namesrv. When enableACL
 // is true, every request is signed with accessKey/secretKey (HMAC-SHA1) before
 // dispatch; non-ACL brokers are unaffected (signIfACL is a no-op).
+//
+// namesrv may be a comma- or semicolon-separated list (RocketMQ/Java commonly
+// uses ';'); the admin client dials a single namesrv per RPC (any one has the
+// full cluster view), so the first usable address is selected.
 func NewAdminClient(namesrv string, enableACL bool, accessKey, secretKey string, timeout time.Duration) *AdminClient {
 	return &AdminClient{
 		rc:         rmqremote.NewRemotingClient(),
-		namesrv:    namesrv,
+		namesrv:    firstNamesrv(namesrv),
 		enableACL:  enableACL,
 		accessKey:  accessKey,
 		secretKey:  secretKey,
 		timeout:    timeout,
 	}
+}
+
+// firstNamesrv returns the first address from a comma/semicolon-separated
+// namesrv list. The admin client dials one namesrv per RPC; namesrvs share the
+// full cluster view, so any one suffices.
+func firstNamesrv(s string) string {
+	s = strings.ReplaceAll(s, ";", ",")
+	for _, p := range strings.Split(s, ",") {
+		if t := strings.TrimSpace(p); t != "" {
+			return t
+		}
+	}
+	return ""
 }
 
 // Start opens nothing eagerly (connections dial lazily); it logs the ACL

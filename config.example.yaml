@@ -20,7 +20,7 @@
 # Environment variables use the RMQ_ prefix, e.g. RMQ_NAMESRV_ADDR.
 # The config file path itself is set via --config flag or RMQ_CONFIG env var.
 
-# RocketMQ nameserver address (comma-separated for cluster)
+# RocketMQ nameserver address (comma- or semicolon-separated for cluster)
 # env: RMQ_NAMESRV_ADDR  flag: --namesrv
 namesrv: "127.0.0.1:9876"
 

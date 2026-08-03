@@ -46,7 +46,7 @@ cp config.example.yaml config.yaml
 配置文件为 YAML（snake_case），完整字段见 [`config.example.yaml`](config.example.yaml)。常用项：
 
 ```yaml
-namesrv: "127.0.0.1:9876"     # RocketMQ namesrv 地址（多个用逗号分隔）
+namesrv: "127.0.0.1:9876"     # RocketMQ namesrv 地址（多个用逗号或分号分隔）
 listen: ":5557"               # HTTP 监听地址
 telemetry_path: "/metrics"
 enable_collect: true          # 是否启用采集任务

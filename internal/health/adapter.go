@@ -112,9 +112,11 @@ func (l adminLister) ListClusters(_ context.Context) ([]string, error) {
 // NewClusterLister wraps an admin client as a ClusterLister for NewProber.
 func NewClusterLister(a *service.AdminClient) ClusterLister { return adminLister{a: a} }
 
-// splitNamesrv splits the comma-separated namesrv string the config carries into
-// the []string rocketmq-client-go expects.
+// splitNamesrv splits the namesrv string the config carries into the []string
+// rocketmq-client-go expects. Both ',' and ';' are accepted as separators --
+// RocketMQ/Java configs commonly use ';' (e.g. "ip1:9876;ip2:9876").
 func splitNamesrv(s string) []string {
+	s = strings.ReplaceAll(s, ";", ",")
 	parts := strings.Split(s, ",")
 	out := make([]string, 0, len(parts))
 	for _, p := range parts {
