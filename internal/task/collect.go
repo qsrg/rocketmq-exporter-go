@@ -37,14 +37,15 @@ const (
 	retryTopicPrefix = "%RETRY%" // MixAll.RETRY_GROUP_TOPIC_PREFIX
 	dlqTopicPrefix   = "%DLQ%"   // MixAll.DLQ_GROUP_TOPIC_PREFIX
 
-	// collectionConcurrency is the max number of topics processed concurrently
-	// within a single collection task. The per-topic loops were previously
-	// sequential, which at scale (hundreds of topics × many RPCs each, each RPC
-	// a fresh TCP dial) pushed a single collection cycle past the 60s metric TTL
-	// and dropped early-collected samples. Bounded concurrency keeps a cycle
-	// well under the TTL. The collector and the per-call-dial admin client are
-	// both concurrency-safe; per-task shared maps guard themselves.
-	collectionConcurrency = 10
+	// collectionConcurrency is the max number of topics/groups processed
+	// concurrently within a single collection task. With connection pooling
+	// (rmqremote.RemotingClient) there is no per-RPC TCP handshake and no
+	// ephemeral-port/TIME_WAIT exhaustion, so this can exceed the ~14-concurrent
+	// ceiling that per-call dial hit. 30 keeps a cycle well under the 60s metric
+	// TTL for the heaviest task (collectConsumerOffset: ~20 RPCs/group, 80% of
+	// which is the per-queue queryMsgByOffset). The collector and the admin
+	// client are both concurrency-safe; per-task shared maps guard themselves.
+	collectionConcurrency = 30
 )
 
 // topicGroup is a (topic, consumer-group) pair enumerated by collectConsumerOffset.
