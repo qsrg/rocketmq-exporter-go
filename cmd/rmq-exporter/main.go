@@ -83,6 +83,8 @@ func run() error {
 		debug.SetMemoryLimit(limit)
 	}
 
+	setupLogging(cfg)
+
 	slog.Info("rmq-exporter starting",
 		"namesrv", cfg.Namesrv, "listen", cfg.Listen, "telemetry", cfg.TelemetryPath,
 		"enableCollect", cfg.EnableCollect, "enableACL", cfg.EnableACL, "cacheTTL", cfg.CacheTTL,

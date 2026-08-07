@@ -44,6 +44,12 @@ type Config struct {
 	SecretKey      string
 	CacheTTL       time.Duration
 	GoMemLimit     string // Go runtime soft memory limit (GOMEMLIMIT syntax), "" = off
+	LogFile        string // log file path; empty = stderr
+	LogLevel       string // debug/info/warn/error
+	LogMaxSizeMB   int    // max MB per log file before rotation
+	LogMaxAgeDays  int    // max days to retain rotated logs
+	LogMaxBackups  int    // max number of rotated backups
+	LogCompress    bool   // compress rotated log files
 	Cron           CronConfig
 	Pool           PoolConfig
 	HealthCheck    HealthCheckConfig
@@ -91,6 +97,11 @@ func Default() Config {
 		EnableCollect:  true,
 		EnableACL:      false,
 		CacheTTL:       60 * time.Second,
+		LogLevel:       "info",
+		LogMaxSizeMB:   100,
+		LogMaxAgeDays:  60,
+		LogMaxBackups:  10,
+		LogCompress:    true,
 		Cron: CronConfig{
 			CollectTopicOffset:        "15 0/1 * * * ?",
 			CollectProducer:            "15 0/1 * * * ?",
@@ -183,6 +194,20 @@ func RegisterFlags(fs *flag.FlagSet, envPrefix string, base *Config) *Config {
 		"TTL of the in-memory metric store")
 	fs.StringVar(&c.GoMemLimit, "go-mem-limit", env("GO_MEM_LIMIT", c.GoMemLimit),
 		"Go runtime soft memory limit (GOMEMLIMIT syntax: e.g. 512MiB, 1GiB, or off); empty=off")
+
+	// Logging
+	fs.StringVar(&c.LogFile, "log-file", env("LOG_FILE", c.LogFile),
+		"log file path; empty = stderr (no file rotation)")
+	fs.StringVar(&c.LogLevel, "log-level", env("LOG_LEVEL", c.LogLevel),
+		"log level (debug/info/warn/error)")
+	fs.IntVar(&c.LogMaxSizeMB, "log-max-size-mb", envInt("LOG_MAX_SIZE_MB", c.LogMaxSizeMB),
+		"max MB per log file before rotation")
+	fs.IntVar(&c.LogMaxAgeDays, "log-max-age-days", envInt("LOG_MAX_AGE_DAYS", c.LogMaxAgeDays),
+		"max days to retain rotated log files")
+	fs.IntVar(&c.LogMaxBackups, "log-max-backups", envInt("LOG_MAX_BACKUPS", c.LogMaxBackups),
+		"max number of rotated log file backups")
+	fs.BoolVar(&c.LogCompress, "log-compress", envBool("LOG_COMPRESS", c.LogCompress),
+		"compress rotated log files")
 	fs.IntVar(&c.Pool.Core, "pool-core", envInt("POOL_CORE", c.Pool.Core),
 		"worker pool core size")
 	fs.IntVar(&c.Pool.Max, "pool-max", envInt("POOL_MAX", c.Pool.Max),
@@ -277,6 +302,7 @@ type yamlConfig struct {
 	SecretKey     *string          `yaml:"secret_key"`
 	CacheTTL      *string          `yaml:"cache_ttl"` // Go duration string, e.g. "60s"
 	GoMemLimit    *string          `yaml:"go_mem_limit"` // Go runtime soft memory limit, e.g. "512MiB"; "off"/"" = no limit
+	Log           *yamlLog         `yaml:"log"`
 	Pool          *yamlPool        `yaml:"pool"`
 	Cron          *yamlCron        `yaml:"cron"`
 	HealthCheck   *yamlHealthCheck `yaml:"health_check"`
@@ -305,6 +331,15 @@ type yamlHealthCheck struct {
 	Recency        *string  `yaml:"recency"`          // Go duration string, e.g. "5s"
 	ClusterRefresh *string  `yaml:"cluster_refresh"`   // Go duration string, e.g. "5m"
 	Path           *string  `yaml:"path"`
+}
+
+type yamlLog struct {
+	File       *string `yaml:"file"`
+	Level      *string `yaml:"level"`
+	MaxSizeMB  *int    `yaml:"max_size_mb"`
+	MaxAgeDays *int    `yaml:"max_age_days"`
+	MaxBackups *int    `yaml:"max_backups"`
+	Compress   *bool   `yaml:"compress"`
 }
 
 // FindConfigPath returns the config file path by scanning os.Args for --config
@@ -377,6 +412,26 @@ func Overlay(dst *Config, src *yamlConfig) error {
 	}
 	if src.GoMemLimit != nil {
 		dst.GoMemLimit = *src.GoMemLimit
+	}
+	if src.Log != nil {
+		if src.Log.File != nil {
+			dst.LogFile = *src.Log.File
+		}
+		if src.Log.Level != nil {
+			dst.LogLevel = *src.Log.Level
+		}
+		if src.Log.MaxSizeMB != nil {
+			dst.LogMaxSizeMB = *src.Log.MaxSizeMB
+		}
+		if src.Log.MaxAgeDays != nil {
+			dst.LogMaxAgeDays = *src.Log.MaxAgeDays
+		}
+		if src.Log.MaxBackups != nil {
+			dst.LogMaxBackups = *src.Log.MaxBackups
+		}
+		if src.Log.Compress != nil {
+			dst.LogCompress = *src.Log.Compress
+		}
 	}
 	if src.Pool != nil {
 		if src.Pool.Core != nil {

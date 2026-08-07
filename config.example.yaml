@@ -54,6 +54,18 @@ cache_ttl: "60s"
 # env: RMQ_GO_MEM_LIMIT  flag: --go-mem-limit
 go_mem_limit: ""
 
+# Logging. Empty file = stderr (no rotation). Set a file to enable lumberjack
+# rotation (all logs -- exporter slog + rocketmq-client-go rlog -- go to one file).
+# env: RMQ_LOG_FILE / RMQ_LOG_LEVEL / RMQ_LOG_MAX_SIZE_MB / RMQ_LOG_MAX_AGE_DAYS / RMQ_LOG_MAX_BACKUPS / RMQ_LOG_COMPRESS
+# flags: --log-file / --log-level / --log-max-size-mb / --log-max-age-days / --log-max-backups / --log-compress
+log:
+  file: ""              # log file path; empty = stderr (no file rotation)
+  level: "info"         # debug/info/warn/error
+  max_size_mb: 100      # rotate when a log file exceeds this many MB
+  max_age_days: 60      # delete rotated logs older than this many days (~2 months)
+  max_backups: 10       # max number of rotated log files to keep
+  compress: true        # gzip rotated log files
+
 # Bounded worker pool sizing
 pool:
   core: 10

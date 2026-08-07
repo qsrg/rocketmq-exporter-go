@@ -55,6 +55,13 @@ access_key: ""
 secret_key: ""
 cache_ttl: "60s"              # 指标缓存 TTL（Go duration 格式）
 go_mem_limit: ""              # Go runtime 软内存上限（GOMEMLIMIT 语法，如 512MiB；空=不限）
+log:
+  file: ""                    # 日志文件路径；空=stderr（不轮转）。设了则按下方参数轮转
+  level: "info"               # debug/info/warn/error
+  max_size_mb: 100            # 单文件超此 MB 则轮转
+  max_age_days: 60            # 保留天数（~2 个月）
+  max_backups: 10             # 最多保留轮转备份数
+  compress: true              # 压缩轮转文件
 pool: { core: 10, max: 10, queue: 5000 }   # worker pool
 cron:
   collect_topic_offset: "15 0/1 * * * ?"   # 6 字段 cron，? 会自动转 *
