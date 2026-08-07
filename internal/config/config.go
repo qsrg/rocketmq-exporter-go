@@ -43,6 +43,7 @@ type Config struct {
 	AccessKey      string
 	SecretKey      string
 	CacheTTL       time.Duration
+	GoMemLimit     string // Go runtime soft memory limit (GOMEMLIMIT syntax), "" = off
 	Cron           CronConfig
 	Pool           PoolConfig
 	HealthCheck    HealthCheckConfig
@@ -180,6 +181,8 @@ func RegisterFlags(fs *flag.FlagSet, envPrefix string, base *Config) *Config {
 		"ACL secret key (requires --enable-acl)")
 	fs.DurationVar(&c.CacheTTL, "cache-ttl", envDur("CACHE_TTL", c.CacheTTL),
 		"TTL of the in-memory metric store")
+	fs.StringVar(&c.GoMemLimit, "go-mem-limit", env("GO_MEM_LIMIT", c.GoMemLimit),
+		"Go runtime soft memory limit (GOMEMLIMIT syntax: e.g. 512MiB, 1GiB, or off); empty=off")
 	fs.IntVar(&c.Pool.Core, "pool-core", envInt("POOL_CORE", c.Pool.Core),
 		"worker pool core size")
 	fs.IntVar(&c.Pool.Max, "pool-max", envInt("POOL_MAX", c.Pool.Max),
@@ -273,6 +276,7 @@ type yamlConfig struct {
 	AccessKey     *string          `yaml:"access_key"`
 	SecretKey     *string          `yaml:"secret_key"`
 	CacheTTL      *string          `yaml:"cache_ttl"` // Go duration string, e.g. "60s"
+	GoMemLimit    *string          `yaml:"go_mem_limit"` // Go runtime soft memory limit, e.g. "512MiB"; "off"/"" = no limit
 	Pool          *yamlPool        `yaml:"pool"`
 	Cron          *yamlCron        `yaml:"cron"`
 	HealthCheck   *yamlHealthCheck `yaml:"health_check"`
@@ -371,6 +375,9 @@ func Overlay(dst *Config, src *yamlConfig) error {
 		}
 		dst.CacheTTL = d
 	}
+	if src.GoMemLimit != nil {
+		dst.GoMemLimit = *src.GoMemLimit
+	}
 	if src.Pool != nil {
 		if src.Pool.Core != nil {
 			dst.Pool.Core = *src.Pool.Core
@@ -444,4 +451,41 @@ func OverlayFile(dst *Config, path string) error {
 		return err
 	}
 	return Overlay(dst, yc)
+}
+
+// ParseMemLimit parses a Go runtime soft memory limit (GOMEMLIMIT syntax):
+// "" or "off" => 0 (no limit); otherwise a number with an optional unit
+// (B, KiB, MiB, GiB, TiB; K/M/G are binary, matching GOMEMLIMIT). Returns the
+// limit in bytes for runtime/debug.SetMemoryLimit.
+func ParseMemLimit(s string) (int64, error) {
+	s = strings.TrimSpace(s)
+	if s == "" || strings.EqualFold(s, "off") {
+		return 0, nil
+	}
+	// Split the leading number from the trailing unit.
+	i := 0
+	for i < len(s) && (s[i] >= '0' && s[i] <= '9' || s[i] == '.') {
+		i++
+	}
+	numStr, unit := s[:i], strings.TrimSpace(s[i:])
+	n, err := strconv.ParseFloat(numStr, 64)
+	if err != nil {
+		return 0, fmt.Errorf("invalid memory limit %q: %w", s, err)
+	}
+	var mult int64
+	switch strings.ToLower(unit) {
+	case "", "b":
+		mult = 1
+	case "k", "kib":
+		mult = 1 << 10
+	case "m", "mib":
+		mult = 1 << 20
+	case "g", "gib":
+		mult = 1 << 30
+	case "t", "tib":
+		mult = 1 << 40
+	default:
+		return 0, fmt.Errorf("invalid memory limit unit %q in %q", unit, s)
+	}
+	return int64(n * float64(mult)), nil
 }

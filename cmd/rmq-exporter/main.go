@@ -29,6 +29,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"runtime/debug"
 	"strings"
 	"syscall"
 	"time"
@@ -73,9 +74,19 @@ func run() error {
 	if err := cfg.ValidateAll(); err != nil {
 		return err
 	}
+
+	// Go runtime soft memory limit (GOMEMLIMIT equivalent). Off by default; set
+	// via --go-mem-limit / RMQ_GO_MEM_LIMIT / go_mem_limit in the config file.
+	if limit, err := config.ParseMemLimit(cfg.GoMemLimit); err != nil {
+		return fmt.Errorf("go-mem-limit: %w", err)
+	} else if limit > 0 {
+		debug.SetMemoryLimit(limit)
+	}
+
 	slog.Info("rmq-exporter starting",
 		"namesrv", cfg.Namesrv, "listen", cfg.Listen, "telemetry", cfg.TelemetryPath,
-		"enableCollect", cfg.EnableCollect, "enableACL", cfg.EnableACL, "cacheTTL", cfg.CacheTTL)
+		"enableCollect", cfg.EnableCollect, "enableACL", cfg.EnableACL, "cacheTTL", cfg.CacheTTL,
+		"goMemLimit", cfg.GoMemLimit)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()

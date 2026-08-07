@@ -543,3 +543,34 @@ func TestFindConfigPathEnvFallback(t *testing.T) {
 		t.Errorf("FindConfigPath() = %q, want /env/config.yaml", got)
 	}
 }
+
+func TestParseMemLimit(t *testing.T) {
+	for _, tc := range []struct {
+		in   string
+		want int64
+	}{
+		{"", 0},
+		{"off", 0},
+		{"OFF", 0},
+		{"512", 512},
+		{"1KiB", 1 << 10},
+		{"512MiB", 512 << 20},
+		{"1G", 1 << 30},
+		{"1.5GiB", int64(1.5 * float64(1<<30))},
+	} {
+		got, err := ParseMemLimit(tc.in)
+		if err != nil {
+			t.Errorf("ParseMemLimit(%q) error: %v", tc.in, err)
+			continue
+		}
+		if got != tc.want {
+			t.Errorf("ParseMemLimit(%q) = %d, want %d", tc.in, got, tc.want)
+		}
+	}
+	if _, err := ParseMemLimit("abc"); err == nil {
+		t.Errorf("ParseMemLimit(%q) want error for non-numeric, got nil", "abc")
+	}
+	if _, err := ParseMemLimit("1XiB"); err == nil {
+		t.Errorf("ParseMemLimit(%q) want error for bad unit, got nil", "1XiB")
+	}
+}

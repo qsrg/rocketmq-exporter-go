@@ -54,6 +54,7 @@ enable_acl: false             # broker 开了 ACL 就改 true 并填下面两项
 access_key: ""
 secret_key: ""
 cache_ttl: "60s"              # 指标缓存 TTL（Go duration 格式）
+go_mem_limit: ""              # Go runtime 软内存上限（GOMEMLIMIT 语法，如 512MiB；空=不限）
 pool: { core: 10, max: 10, queue: 5000 }   # worker pool
 cron:
   collect_topic_offset: "15 0/1 * * * ?"   # 6 字段 cron，? 会自动转 *

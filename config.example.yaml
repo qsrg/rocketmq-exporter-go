@@ -49,6 +49,11 @@ secret_key: ""
 # env: RMQ_CACHE_TTL  flag: --cache-ttl
 cache_ttl: "60s"
 
+# Go runtime soft memory limit (GOMEMLIMIT syntax: e.g. 512MiB, 1GiB, off).
+# Empty/off = no limit (runtime grows as needed, governed by GOGC and the OS).
+# env: RMQ_GO_MEM_LIMIT  flag: --go-mem-limit
+go_mem_limit: ""
+
 # Bounded worker pool sizing
 pool:
   core: 10
